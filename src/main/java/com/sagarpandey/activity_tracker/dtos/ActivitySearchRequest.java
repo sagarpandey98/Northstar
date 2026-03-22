@@ -43,7 +43,7 @@ public class ActivitySearchRequest {
 
     @Data
     public static class PaginationCriteria {
-        private int page = 0; // Default to first page
+        private int page = 0; // Default to 1st page
         private int size = 10; // Default page size
         private String sortBy = "createdAt"; // Default sort field
         private String sortDirection = "DESC"; // Default sort direction (newest first)
