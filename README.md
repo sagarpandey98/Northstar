@@ -52,7 +52,7 @@ mvn spring-boot:run
 - **Backend**: Spring Boot 3.x + Jakarta EE
 - **Database**: PostgreSQL + Spring Data JPA
 - **Security**: OAuth2 + JWT
-- **Build**: Maven + Java 23
+- **Build**: Maven + Java 21 LTS
 - **Testing**: JUnit 5 + Mockito
 
 ## 📊 API Endpoints
