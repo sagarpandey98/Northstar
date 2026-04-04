@@ -20,7 +20,7 @@ public class JwtIssuerDebugFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtIssuerDebugFilter.class);
 
-    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
     private String configuredIssuer;
 
     @Override
