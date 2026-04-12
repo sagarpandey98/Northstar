@@ -2,24 +2,25 @@ package com.sagarpandey.activity_tracker.models;
 
 /*
  * PHASE 1 - NEW COLUMNS ADDED TO goals TABLE:
- * goal_type                VARCHAR(50)
- * target_frequency_weekly  INTEGER
- * target_volume_daily      INTEGER
- * schedule_type            VARCHAR(50)
- * schedule_days            VARCHAR(100)  -- e.g. "MON,WED,FRI"
- * minimum_session_minutes  INTEGER
- * allow_double_logging     BOOLEAN
- * misses_allowed_per_week  INTEGER
- * misses_allowed_per_month INTEGER
- * consistency_weight       INTEGER
- * momentum_weight          INTEGER
- * progress_weight          INTEGER
- * consistency_score        DOUBLE PRECISION
- * momentum_score           DOUBLE PRECISION
- * health_score             DOUBLE PRECISION
- * health_status            VARCHAR(50)
- * current_streak           INTEGER
- * longest_streak           INTEGER
+ * goal_type                    VARCHAR(50)
+ * target_frequency_weekly      INTEGER
+ * target_volume_daily          INTEGER
+ * schedule_type                VARCHAR(50)
+ * schedule_days                VARCHAR(100)  -- e.g. "MON,WED,FRI"
+ * minimum_session_period       INTEGER  -- mins for selected period
+ * minimum_session_daily        INTEGER  -- auto-calculated daily mins
+ * allow_double_logging         BOOLEAN
+ * misses_allowed_per_week      INTEGER
+ * misses_allowed_per_month     INTEGER
+ * consistency_weight           INTEGER
+ * momentum_weight              INTEGER
+ * progress_weight              INTEGER
+ * consistency_score            DOUBLE PRECISION
+ * momentum_score               DOUBLE PRECISION
+ * health_score                 DOUBLE PRECISION
+ * health_status                VARCHAR(50)
+ * current_streak               INTEGER
+ * longest_streak               INTEGER
  */
 
 import com.sagarpandey.activity_tracker.enums.EvaluationPeriod;
@@ -140,10 +141,19 @@ public class Goal {
     // Only used when scheduleType = SPECIFIC_DAYS
     // Frontend sends array, backend serializes to string
 
-    @Column(name = "minimum_session_minutes")
-    private Integer minimumSessionMinutes;
-    // Activity only counts toward goal if duration >= this value
-    // Null means any duration counts
+    @Column(name = "minimum_session_period")
+    private Integer minimumSessionPeriod;
+    // Minimum time (in minutes) required per evaluation period
+    // e.g. 120 min per week, 300 min per month
+    // Used to determine if goal is on track for priority calculation
+    // Null means no minimum time requirement
+
+    @Column(name = "minimum_session_daily")
+    private Integer minimumSessionDaily;
+    // Auto-calculated daily minimum
+    // = minimumSessionPeriod / number_of_days_in_period
+    // e.g. 120 min week / 7 days = ~17 min daily
+    // Used for daily urgency and priority in smart todo list
 
     @Column(name = "allow_double_logging")
     private Boolean allowDoubleLogging;
@@ -154,11 +164,8 @@ public class Goal {
     // Per-goal overrides. If null, falls back to user global preference.
     // User global preference falls back to priority-based defaults:
     // P1/CRITICAL → 0, P2/HIGH → 1, P3/MEDIUM → 2, P4/LOW → 3
-    @Column(name = "misses_allowed_per_week")
-    private Integer missesAllowedPerWeek;
-
-    @Column(name = "misses_allowed_per_month")
-    private Integer missesAllowedPerMonth;
+    @Column(name = "misses_allowed_per_period")
+    private Integer missesAllowedPerPeriod;
 
     // --- Health Score Weights ---
     // Must sum to 100 when all three are set
@@ -333,17 +340,17 @@ public class Goal {
     public String getScheduleDays() { return scheduleDays; }
     public void setScheduleDays(String scheduleDays) { this.scheduleDays = scheduleDays; }
 
-    public Integer getMinimumSessionMinutes() { return minimumSessionMinutes; }
-    public void setMinimumSessionMinutes(Integer minimumSessionMinutes) { this.minimumSessionMinutes = minimumSessionMinutes; }
+    public Integer getMinimumSessionPeriod() { return minimumSessionPeriod; }
+    public void setMinimumSessionPeriod(Integer minimumSessionPeriod) { this.minimumSessionPeriod = minimumSessionPeriod; }
+
+    public Integer getMinimumSessionDaily() { return minimumSessionDaily; }
+    public void setMinimumSessionDaily(Integer minimumSessionDaily) { this.minimumSessionDaily = minimumSessionDaily; }
 
     public Boolean getAllowDoubleLogging() { return allowDoubleLogging; }
     public void setAllowDoubleLogging(Boolean allowDoubleLogging) { this.allowDoubleLogging = allowDoubleLogging; }
 
-    public Integer getMissesAllowedPerWeek() { return missesAllowedPerWeek; }
-    public void setMissesAllowedPerWeek(Integer missesAllowedPerWeek) { this.missesAllowedPerWeek = missesAllowedPerWeek; }
-
-    public Integer getMissesAllowedPerMonth() { return missesAllowedPerMonth; }
-    public void setMissesAllowedPerMonth(Integer missesAllowedPerMonth) { this.missesAllowedPerMonth = missesAllowedPerMonth; }
+    public Integer getMissesAllowedPerPeriod() { return missesAllowedPerPeriod; }
+    public void setMissesAllowedPerPeriod(Integer missesAllowedPerPeriod) { this.missesAllowedPerPeriod = missesAllowedPerPeriod; }
 
     public Integer getConsistencyWeight() { return consistencyWeight; }
     public void setConsistencyWeight(Integer consistencyWeight) { this.consistencyWeight = consistencyWeight; }
@@ -491,9 +498,9 @@ public class Goal {
     // Returns default misses allowed per week based on priority
     // Used when per-goal missesAllowedPerWeek is null
     // and no global user preference is set
-    public int getDefaultMissesAllowedPerWeek() {
-        if (this.missesAllowedPerWeek != null)
-            return this.missesAllowedPerWeek;
+    public int getDefaultMissesAllowedPerPeriod() {
+        if (this.missesAllowedPerPeriod != null)
+            return this.missesAllowedPerPeriod;
         if (this.priority == null) return 1;
         return switch (this.priority) {
             case CRITICAL -> 0;

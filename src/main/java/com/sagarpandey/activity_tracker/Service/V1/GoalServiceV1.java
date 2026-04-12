@@ -4,8 +4,8 @@ import com.sagarpandey.activity_tracker.Exceptions.GoalNotFoundException;
 import com.sagarpandey.activity_tracker.Exceptions.ValidationException;
 import com.sagarpandey.activity_tracker.Mapper.GoalMapper;
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
-import com.sagarpandey.activity_tracker.Service.Inteface.GoalService;
-import com.sagarpandey.activity_tracker.Service.Inteface.GoalHealthService;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalService;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
 import com.sagarpandey.activity_tracker.dtos.GoalRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
 import com.sagarpandey.activity_tracker.dtos.GoalStatsResponse;
@@ -347,7 +347,7 @@ public class GoalServiceV1 implements GoalService {
             );
 
         // Trigger health recalculation
-        goalHealthService.recalculateHealth(goal.getId());
+        goalHealthService.updateGoalHealth(goal);
 
         // Fetch updated goal and return response
         Goal updatedGoal = goalRepository

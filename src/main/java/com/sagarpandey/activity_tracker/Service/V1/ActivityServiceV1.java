@@ -6,8 +6,8 @@ import com.sagarpandey.activity_tracker.Mapper.ActivityMapper;
 import com.sagarpandey.activity_tracker.Repository.ActivityRepository;
 import com.sagarpandey.activity_tracker.Repository.ActivitySpecifications;
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
-import com.sagarpandey.activity_tracker.Service.Inteface.ActivityServiceInterface;
-import com.sagarpandey.activity_tracker.Service.Inteface.GoalHealthService;
+import com.sagarpandey.activity_tracker.Service.Interface.ActivityServiceInterface;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
 import com.sagarpandey.activity_tracker.dtos.ActivityRequest;
 import com.sagarpandey.activity_tracker.dtos.ActivityResponse;
 import com.sagarpandey.activity_tracker.dtos.ActivitySearchRequest;
@@ -17,6 +17,7 @@ import com.sagarpandey.activity_tracker.dtos.ActivityBulkCreateResponse;
 import com.sagarpandey.activity_tracker.enums.ActivitySource;
 import com.sagarpandey.activity_tracker.Exceptions.ValidationException;
 import com.sagarpandey.activity_tracker.models.Activity;
+import com.sagarpandey.activity_tracker.models.Goal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -172,10 +173,10 @@ public class ActivityServiceV1 implements ActivityServiceInterface {
             // === PHASE 5 — Health score update ===
             try {
                 if (savedActivity.getGoalId() != null) {
-                    goalHealthService.onActivityLogged(
-                        savedActivity.getGoalId(),
-                        savedActivity.getStartTime().toLocalDate()
-                    );
+                    Goal goal = goalRepository.findById(savedActivity.getGoalId()).orElse(null);
+                    if (goal != null) {
+                        goalHealthService.updateGoalHealth(goal);
+                    }
                 }
             } catch (Exception e) {
                 // Non-blocking — do not fail activity creation
@@ -226,10 +227,10 @@ public class ActivityServiceV1 implements ActivityServiceInterface {
                 // === PHASE 5 — Health score update ===
                 try {
                     if (activityResponse.getGoalId() != null) {
-                        goalHealthService.onActivityLogged(
-                            activityResponse.getGoalId(),
-                            activityResponse.getStartTime().toLocalDate()
-                        );
+                        Goal goal = goalRepository.findById(activityResponse.getGoalId()).orElse(null);
+                        if (goal != null) {
+                            goalHealthService.updateGoalHealth(goal);
+                        }
                     }
                 } catch (Exception e) {
                     log.warn("Health update failed for activity {}: {}",

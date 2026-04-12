@@ -63,8 +63,11 @@ public class GoalRequest {
     // Optional — list of days e.g. ["MON", "WED", "FRI"]
     private List<ScheduleDay> scheduleDays;
 
-    // Optional — activity only counts if duration >= this (minutes)
-    private Integer minimumSessionMinutes;
+    // Minimum session time requirements
+    // minimumSessionPeriod: total minutes for selected period
+    // minimumSessionDaily: auto-calculated daily average
+    private Integer minimumSessionPeriod;
+    private Integer minimumSessionDaily;
 
     // Optional — default true
     private Boolean allowDoubleLogging;
@@ -72,8 +75,7 @@ public class GoalRequest {
     // Grace period — optional, overrides user global preference
     // If null, falls back to priority-based default:
     // CRITICAL→0, HIGH→1, MEDIUM→2, LOW→3
-    private Integer missesAllowedPerWeek;
-    private Integer missesAllowedPerMonth;
+    private Integer missesAllowedPerPeriod;
 
     // Health score weights — optional
     // Rule: if ANY of the three weights is provided, 
@@ -141,17 +143,17 @@ public class GoalRequest {
     public List<ScheduleDay> getScheduleDays() { return scheduleDays; }
     public void setScheduleDays(List<ScheduleDay> scheduleDays) { this.scheduleDays = scheduleDays; }
 
-    public Integer getMinimumSessionMinutes() { return minimumSessionMinutes; }
-    public void setMinimumSessionMinutes(Integer minimumSessionMinutes) { this.minimumSessionMinutes = minimumSessionMinutes; }
+    public Integer getMinimumSessionPeriod() { return minimumSessionPeriod; }
+    public void setMinimumSessionPeriod(Integer minimumSessionPeriod) { this.minimumSessionPeriod = minimumSessionPeriod; }
+
+    public Integer getMinimumSessionDaily() { return minimumSessionDaily; }
+    public void setMinimumSessionDaily(Integer minimumSessionDaily) { this.minimumSessionDaily = minimumSessionDaily; }
 
     public Boolean getAllowDoubleLogging() { return allowDoubleLogging; }
     public void setAllowDoubleLogging(Boolean allowDoubleLogging) { this.allowDoubleLogging = allowDoubleLogging; }
 
-    public Integer getMissesAllowedPerWeek() { return missesAllowedPerWeek; }
-    public void setMissesAllowedPerWeek(Integer missesAllowedPerWeek) { this.missesAllowedPerWeek = missesAllowedPerWeek; }
-
-    public Integer getMissesAllowedPerMonth() { return missesAllowedPerMonth; }
-    public void setMissesAllowedPerMonth(Integer missesAllowedPerMonth) { this.missesAllowedPerMonth = missesAllowedPerMonth; }
+    public Integer getMissesAllowedPerPeriod() { return missesAllowedPerPeriod; }
+    public void setMissesAllowedPerPeriod(Integer missesAllowedPerPeriod) { this.missesAllowedPerPeriod = missesAllowedPerPeriod; }
 
     public Integer getConsistencyWeight() { return consistencyWeight; }
     public void setConsistencyWeight(Integer consistencyWeight) { this.consistencyWeight = consistencyWeight; }

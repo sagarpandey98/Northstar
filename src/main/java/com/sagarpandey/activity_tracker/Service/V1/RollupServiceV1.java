@@ -2,7 +2,7 @@ package com.sagarpandey.activity_tracker.Service.V1;
 
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
 import com.sagarpandey.activity_tracker.Repository.GoalWeeklySnapshotRepository;
-import com.sagarpandey.activity_tracker.Service.Inteface.RollupService;
+import com.sagarpandey.activity_tracker.Service.Interface.RollupService;
 import com.sagarpandey.activity_tracker.dtos.ParentInsights;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
 import com.sagarpandey.activity_tracker.models.Goal;

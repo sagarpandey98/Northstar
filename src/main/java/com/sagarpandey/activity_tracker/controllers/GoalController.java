@@ -1,7 +1,7 @@
 package com.sagarpandey.activity_tracker.controllers;
 
-import com.sagarpandey.activity_tracker.Service.Inteface.GoalHealthService;
-import com.sagarpandey.activity_tracker.Service.Inteface.GoalService;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalService;
 import com.sagarpandey.activity_tracker.dtos.GoalRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
 import com.sagarpandey.activity_tracker.dtos.GoalStatsResponse;

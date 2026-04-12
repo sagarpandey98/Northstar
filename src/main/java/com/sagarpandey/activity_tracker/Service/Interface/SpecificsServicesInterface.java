@@ -1,4 +1,4 @@
-package com.sagarpandey.activity_tracker.Service.Inteface;
+package com.sagarpandey.activity_tracker.Service.Interface;
 
 import com.sagarpandey.activity_tracker.models.Specifics;
 import java.util.List;

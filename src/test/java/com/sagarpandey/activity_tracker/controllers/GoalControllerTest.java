@@ -1,7 +1,7 @@
 package com.sagarpandey.activity_tracker.controllers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sagarpandey.activity_tracker.Service.Inteface.GoalService;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalService;
 import com.sagarpandey.activity_tracker.dtos.GoalRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
 import com.sagarpandey.activity_tracker.dtos.GoalStatsResponse;

@@ -1,7 +1,7 @@
 package com.sagarpandey.activity_tracker.Mapper;
 
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
-import com.sagarpandey.activity_tracker.Service.Inteface.RollupService;
+import com.sagarpandey.activity_tracker.Service.Interface.RollupService;
 import com.sagarpandey.activity_tracker.dtos.GoalRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
 import com.sagarpandey.activity_tracker.enums.EvaluationPeriod;
@@ -69,7 +69,8 @@ public class GoalMapper {
             goal.setScheduleDaysList(request.getScheduleDays());
         }
 
-        goal.setMinimumSessionMinutes(request.getMinimumSessionMinutes());
+        goal.setMinimumSessionPeriod(request.getMinimumSessionPeriod());
+        goal.setMinimumSessionDaily(request.getMinimumSessionDaily());
 
         goal.setAllowDoubleLogging(
                 request.getAllowDoubleLogging() != null
@@ -77,8 +78,7 @@ public class GoalMapper {
                         : Boolean.TRUE
         );
 
-        goal.setMissesAllowedPerWeek(request.getMissesAllowedPerWeek());
-        goal.setMissesAllowedPerMonth(request.getMissesAllowedPerMonth());
+        goal.setMissesAllowedPerPeriod(request.getMissesAllowedPerPeriod());
 
         GoalWeightValidator.validateWeights(
                 request.getConsistencyWeight(),
@@ -157,7 +157,8 @@ public class GoalMapper {
             goal.setScheduleDaysList(request.getScheduleDays());
         }
 
-        goal.setMinimumSessionMinutes(request.getMinimumSessionMinutes());
+        goal.setMinimumSessionPeriod(request.getMinimumSessionPeriod());
+        goal.setMinimumSessionDaily(request.getMinimumSessionDaily());
 
         goal.setAllowDoubleLogging(
                 request.getAllowDoubleLogging() != null
@@ -165,8 +166,7 @@ public class GoalMapper {
                         : Boolean.TRUE
         );
 
-        goal.setMissesAllowedPerWeek(request.getMissesAllowedPerWeek());
-        goal.setMissesAllowedPerMonth(request.getMissesAllowedPerMonth());
+        goal.setMissesAllowedPerPeriod(request.getMissesAllowedPerPeriod());
 
         GoalWeightValidator.validateWeights(
                 request.getConsistencyWeight(),
@@ -235,11 +235,11 @@ public class GoalMapper {
 
         response.setScheduleType(goal.getScheduleType());
         response.setScheduleDays(goal.getScheduleDaysList());
-        response.setMinimumSessionMinutes(goal.getMinimumSessionMinutes());
+        response.setMinimumSessionPeriod(goal.getMinimumSessionPeriod());
+        response.setMinimumSessionDaily(goal.getMinimumSessionDaily());
         response.setAllowDoubleLogging(goal.getAllowDoubleLogging());
 
-        response.setMissesAllowedPerWeek(goal.getMissesAllowedPerWeek());
-        response.setMissesAllowedPerMonth(goal.getMissesAllowedPerMonth());
+        response.setMissesAllowedPerPeriod(goal.getMissesAllowedPerPeriod());
 
         response.setEffectiveConsistencyWeight(goal.getEffectiveConsistencyWeight());
         response.setEffectiveMomentumWeight(goal.getEffectiveMomentumWeight());

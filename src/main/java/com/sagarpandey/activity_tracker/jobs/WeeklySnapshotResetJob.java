@@ -2,7 +2,7 @@ package com.sagarpandey.activity_tracker.jobs;
 
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
 import com.sagarpandey.activity_tracker.Repository.GoalWeeklySnapshotRepository;
-import com.sagarpandey.activity_tracker.Service.Inteface.GoalHealthService;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
 import com.sagarpandey.activity_tracker.models.Goal;
 import com.sagarpandey.activity_tracker.models.GoalWeeklySnapshot;
 import com.sagarpandey.activity_tracker.utils.WeekUtils;
@@ -85,7 +85,7 @@ public class WeeklySnapshotResetJob {
                 }
 
                 // Recalculate health for all active goals
-                goalHealthService.recalculateHealth(goal.getId());
+                goalHealthService.updateGoalHealth(goal);
                 healthUpdated++;
 
             } catch (Exception e) {

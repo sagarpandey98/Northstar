@@ -1,0 +1,28 @@
+package com.sagarpandey.activity_tracker.Service.Interface;
+
+import com.sagarpandey.activity_tracker.dtos.SmartTodoResponse;
+
+import java.util.List;
+
+/**
+ * Smart Todo Service Interface
+ * Provides intelligent daily task generation based on schedule awareness,
+ * priority ordering, urgency calculation, and progress tracking.
+ */
+public interface SmartTodoService {
+    
+    /**
+     * Get today's smart todo list
+     * Returns intelligent daily tasks based on schedule, priority, and progress
+     */
+    List<SmartTodoResponse> getTodaySmartTodos(String userId);
+    
+    /**
+     * Refresh today's todo list
+     * Recalculates priorities based on new activities, streak changes
+     * 
+     * @param userId user ID
+     * @return refreshed todo list
+     */
+    List<SmartTodoResponse> refreshTodayTodos(String userId);
+}

@@ -59,12 +59,12 @@ public class GoalResponse {
     // Schedule configuration
     private ScheduleType scheduleType;
     private List<ScheduleDay> scheduleDays;
-    private Integer minimumSessionMinutes;
+    private Integer minimumSessionPeriod;
+    private Integer minimumSessionDaily;
     private Boolean allowDoubleLogging;
 
     // Grace period
-    private Integer missesAllowedPerWeek;
-    private Integer missesAllowedPerMonth;
+    private Integer missesAllowedPerPeriod;
 
     // Effective weights (always returned, even if not explicitly set)
     // These reflect the actual weights used for health calculation
@@ -182,17 +182,17 @@ public class GoalResponse {
     public List<ScheduleDay> getScheduleDays() { return scheduleDays; }
     public void setScheduleDays(List<ScheduleDay> scheduleDays) { this.scheduleDays = scheduleDays; }
 
-    public Integer getMinimumSessionMinutes() { return minimumSessionMinutes; }
-    public void setMinimumSessionMinutes(Integer minimumSessionMinutes) { this.minimumSessionMinutes = minimumSessionMinutes; }
+    public Integer getMinimumSessionPeriod() { return minimumSessionPeriod; }
+    public void setMinimumSessionPeriod(Integer minimumSessionPeriod) { this.minimumSessionPeriod = minimumSessionPeriod; }
+
+    public Integer getMinimumSessionDaily() { return minimumSessionDaily; }
+    public void setMinimumSessionDaily(Integer minimumSessionDaily) { this.minimumSessionDaily = minimumSessionDaily; }
 
     public Boolean getAllowDoubleLogging() { return allowDoubleLogging; }
     public void setAllowDoubleLogging(Boolean allowDoubleLogging) { this.allowDoubleLogging = allowDoubleLogging; }
 
-    public Integer getMissesAllowedPerWeek() { return missesAllowedPerWeek; }
-    public void setMissesAllowedPerWeek(Integer missesAllowedPerWeek) { this.missesAllowedPerWeek = missesAllowedPerWeek; }
-
-    public Integer getMissesAllowedPerMonth() { return missesAllowedPerMonth; }
-    public void setMissesAllowedPerMonth(Integer missesAllowedPerMonth) { this.missesAllowedPerMonth = missesAllowedPerMonth; }
+    public Integer getMissesAllowedPerPeriod() { return missesAllowedPerPeriod; }
+    public void setMissesAllowedPerPeriod(Integer missesAllowedPerPeriod) { this.missesAllowedPerPeriod = missesAllowedPerPeriod; }
 
     public Integer getEffectiveConsistencyWeight() { return effectiveConsistencyWeight; }
     public void setEffectiveConsistencyWeight(Integer effectiveConsistencyWeight) { this.effectiveConsistencyWeight = effectiveConsistencyWeight; }
