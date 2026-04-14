@@ -1,7 +1,8 @@
 package com.sagarpandey.activity_tracker.Service.V1;
 
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
-import com.sagarpandey.activity_tracker.Repository.GoalWeeklySnapshotRepository;
+import com.sagarpandey.activity_tracker.Repository.GoalPeriodRepository;
+import com.sagarpandey.activity_tracker.models.GoalPeriod;
 import com.sagarpandey.activity_tracker.Service.Interface.RollupService;
 import com.sagarpandey.activity_tracker.dtos.ParentInsights;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
@@ -23,7 +24,7 @@ public class RollupServiceV1 implements RollupService {
     private GoalRepository goalRepository;
 
     @Autowired
-    private GoalWeeklySnapshotRepository snapshotRepository;
+    private GoalPeriodRepository periodRepository;
 
     // =========================================================
     // LEAF CHECK
@@ -231,26 +232,21 @@ public class RollupServiceV1 implements RollupService {
 
     private Double calculateLastWeekHealthScore(
             List<Goal> children) {
-        LocalDate lastWeekMonday = WeekUtils.weeksAgo(1);
+        LocalDate lastWeek = LocalDate.now().minusDays(7);
 
         double weightedSum = 0.0;
         double totalWeight = 0.0;
 
         for (Goal child : children) {
-            Optional<com.sagarpandey.activity_tracker
-                    .models.GoalWeeklySnapshot> snap =
-                snapshotRepository.findByGoalIdAndWeekStart(
-                    child.getId(), lastWeekMonday
-                );
+            List<GoalPeriod> periods = periodRepository.findByGoalId(child.getId());
+            Optional<GoalPeriod> lastWeekPeriod = periods.stream()
+                .filter(p -> p.getStartDate() != null && !p.getStartDate().isAfter(lastWeek))
+                .max(java.util.Comparator.comparing(GoalPeriod::getStartDate));
 
-            if (snap.isPresent()
-                    && snap.get().getConsistencyScoreForWeek()
-                        != null) {
-                double weight =
-                    getPriorityWeight(child.getPriority());
-                weightedSum +=
-                    snap.get().getConsistencyScoreForWeek()
-                    * weight;
+            if (lastWeekPeriod.isPresent()
+                    && lastWeekPeriod.get().getConsistencyScore() != null) {
+                double weight = getPriorityWeight(child.getPriority());
+                weightedSum += lastWeekPeriod.get().getConsistencyScore() * weight;
                 totalWeight += weight;
             }
         }

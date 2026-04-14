@@ -16,8 +16,10 @@ public class SmartTodoResponse {
     private Goal.Priority priority;
     private GoalType goalType;
     
-    // Priority display (P1, P2, P3)
-    private String priorityDisplay;
+    // Priority display
+    private String priorityDisplay; // Legacy (P1, P2)
+    private Double urgencyScore;    // 0-100 calculated score
+    private String smartPriorityGroup; // "Urgent", "High Priority", "Maintaining", etc.
     
     // Schedule information
     private boolean scheduledForToday;
@@ -71,6 +73,12 @@ public class SmartTodoResponse {
     
     public String getPriorityDisplay() { return priorityDisplay; }
     public void setPriorityDisplay(String priorityDisplay) { this.priorityDisplay = priorityDisplay; }
+
+    public Double getUrgencyScore() { return urgencyScore; }
+    public void setUrgencyScore(Double urgencyScore) { this.urgencyScore = urgencyScore; }
+
+    public String getSmartPriorityGroup() { return smartPriorityGroup; }
+    public void setSmartPriorityGroup(String smartPriorityGroup) { this.smartPriorityGroup = smartPriorityGroup; }
     
     public boolean isScheduledForToday() { return scheduledForToday; }
     public void setScheduledForToday(boolean scheduledForToday) { this.scheduledForToday = scheduledForToday; }

@@ -4,15 +4,12 @@ import com.sagarpandey.activity_tracker.Repository.GoalRepository;
 import com.sagarpandey.activity_tracker.Service.Interface.RollupService;
 import com.sagarpandey.activity_tracker.dtos.GoalRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
-import com.sagarpandey.activity_tracker.enums.EvaluationPeriod;
 import com.sagarpandey.activity_tracker.models.Goal;
-import com.sagarpandey.activity_tracker.utils.PeriodUtils;
 import com.sagarpandey.activity_tracker.validators.GoalWeightValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,16 +27,12 @@ public class GoalMapper {
     @Lazy
     private RollupService rollupService;
     
-    /**
-     * Convert GoalRequest to Goal entity
-     */
     public Goal toEntity(GoalRequest request, String userId) {
         Goal goal = new Goal();
         goal.setUuid(UUID.randomUUID().toString());
         goal.setUserId(userId);
         goal.setTitle(request.getTitle());
         goal.setDescription(request.getDescription());
-        goal.setNotes(request.getNotes());
         goal.setPriority(request.getPriority());
         goal.setStatus(request.getStatus() != null ? request.getStatus() : Goal.Status.NOT_STARTED);
         goal.setMetric(request.getMetric());
@@ -54,37 +47,18 @@ public class GoalMapper {
         goal.setLastUpdatedAt(LocalDateTime.now());
         goal.setIsDeleted(false);
 
-        // New fields - Phase 2
+        // New Ledger Fields
         goal.setGoalType(request.getGoalType());
-        goal.setTargetFrequencyWeekly(request.getTargetFrequencyWeekly());
-        goal.setTargetVolumeDaily(request.getTargetVolumeDaily());
-
-        goal.setScheduleType(
-                request.getScheduleType() != null
-                        ? request.getScheduleType()
-                        : goal.getDefaultScheduleType()
-        );
-
-        if (request.getScheduleDays() != null) {
-            goal.setScheduleDaysList(request.getScheduleDays());
-        }
-
+        goal.setScheduleType(request.getScheduleType() != null ? request.getScheduleType() : goal.getDefaultScheduleType());
+        goal.setScheduleSpec(request.getScheduleSpec());
         goal.setMinimumSessionPeriod(request.getMinimumSessionPeriod());
-        goal.setMinimumSessionDaily(request.getMinimumSessionDaily());
-
-        goal.setAllowDoubleLogging(
-                request.getAllowDoubleLogging() != null
-                        ? request.getAllowDoubleLogging()
-                        : Boolean.TRUE
-        );
-
+        goal.setMaximumSessionPeriod(request.getMaximumSessionPeriod());
+        goal.setMinimumTimeCommittedPeriod(request.getMinimumTimeCommittedPeriod());
+        goal.setMinimumTimeCommittedDaily(request.getMinimumTimeCommittedDaily());
+        goal.setAllowDoubleLogging(request.getAllowDoubleLogging() != null ? request.getAllowDoubleLogging() : Boolean.TRUE);
         goal.setMissesAllowedPerPeriod(request.getMissesAllowedPerPeriod());
 
-        GoalWeightValidator.validateWeights(
-                request.getConsistencyWeight(),
-                request.getMomentumWeight(),
-                request.getProgressWeight()
-        );
+        GoalWeightValidator.validateWeights(request.getConsistencyWeight(), request.getMomentumWeight(), request.getProgressWeight());
 
         if (request.getConsistencyWeight() != null) {
             goal.setConsistencyWeight(request.getConsistencyWeight());
@@ -92,38 +66,13 @@ public class GoalMapper {
             goal.setProgressWeight(request.getProgressWeight());
         }
         
-        // === PHASE 9 mappings ===
-        goal.setEvaluationPeriod(request.getEvaluationPeriod());
-        goal.setTargetPerPeriod(request.getTargetPerPeriod());
-        goal.setCustomPeriodDays(request.getCustomPeriodDays());
-
-        // Auto-set currentPeriodStart when evaluationPeriod is set
-        if (request.getEvaluationPeriod() != null
-                && request.getEvaluationPeriod()
-                    != EvaluationPeriod.WEEKLY) {
-            LocalDate periodStart = PeriodUtils.getPeriodStart(
-                LocalDate.now(),
-                request.getEvaluationPeriod(),
-                request.getCustomPeriodDays(),
-                null
-            );
-            goal.setCurrentPeriodStart(periodStart);
-            goal.setCurrentPeriodCount(0);
-        }
-        
-        // Calculate initial progress percentage
         goal.setProgressPercentage(calculateProgressPercentage(goal));
-        
         return goal;
     }
     
-    /**
-     * Update existing Goal entity from GoalRequest
-     */
     public void updateEntity(Goal goal, GoalRequest request) {
         goal.setTitle(request.getTitle());
         goal.setDescription(request.getDescription());
-        goal.setNotes(request.getNotes());
         goal.setPriority(request.getPriority());
         if (request.getStatus() != null) {
             goal.setStatus(request.getStatus());
@@ -142,37 +91,18 @@ public class GoalMapper {
         }
         goal.setLastUpdatedAt(LocalDateTime.now());
 
-        // New fields - Phase 2
+        // New Ledger Fields
         goal.setGoalType(request.getGoalType());
-        goal.setTargetFrequencyWeekly(request.getTargetFrequencyWeekly());
-        goal.setTargetVolumeDaily(request.getTargetVolumeDaily());
-
-        goal.setScheduleType(
-                request.getScheduleType() != null
-                        ? request.getScheduleType()
-                        : goal.getDefaultScheduleType()
-        );
-
-        if (request.getScheduleDays() != null) {
-            goal.setScheduleDaysList(request.getScheduleDays());
-        }
-
+        goal.setScheduleType(request.getScheduleType() != null ? request.getScheduleType() : goal.getDefaultScheduleType());
+        goal.setScheduleSpec(request.getScheduleSpec());
         goal.setMinimumSessionPeriod(request.getMinimumSessionPeriod());
-        goal.setMinimumSessionDaily(request.getMinimumSessionDaily());
-
-        goal.setAllowDoubleLogging(
-                request.getAllowDoubleLogging() != null
-                        ? request.getAllowDoubleLogging()
-                        : Boolean.TRUE
-        );
-
+        goal.setMaximumSessionPeriod(request.getMaximumSessionPeriod());
+        goal.setMinimumTimeCommittedPeriod(request.getMinimumTimeCommittedPeriod());
+        goal.setMinimumTimeCommittedDaily(request.getMinimumTimeCommittedDaily());
+        goal.setAllowDoubleLogging(request.getAllowDoubleLogging() != null ? request.getAllowDoubleLogging() : Boolean.TRUE);
         goal.setMissesAllowedPerPeriod(request.getMissesAllowedPerPeriod());
 
-        GoalWeightValidator.validateWeights(
-                request.getConsistencyWeight(),
-                request.getMomentumWeight(),
-                request.getProgressWeight()
-        );
+        GoalWeightValidator.validateWeights(request.getConsistencyWeight(), request.getMomentumWeight(), request.getProgressWeight());
 
         if (request.getConsistencyWeight() != null) {
             goal.setConsistencyWeight(request.getConsistencyWeight());
@@ -180,16 +110,10 @@ public class GoalMapper {
             goal.setProgressWeight(request.getProgressWeight());
         }
         
-        // Recalculate progress percentage
         goal.setProgressPercentage(calculateProgressPercentage(goal));
-        
-        // Auto-update status based on progress and dates
         updateStatusBasedOnProgress(goal);
     }
     
-    /**
-     * Convert Goal entity to GoalResponse
-     */
     public GoalResponse toResponse(Goal goal) {
         GoalResponse response = new GoalResponse();
         response.setId(goal.getId());
@@ -197,7 +121,6 @@ public class GoalMapper {
         response.setUserId(goal.getUserId());
         response.setTitle(goal.getTitle());
         response.setDescription(goal.getDescription());
-        response.setNotes(goal.getNotes());
         response.setPriority(goal.getPriority());
         response.setStatus(goal.getStatus());
         response.setMetric(goal.getMetric());
@@ -213,55 +136,34 @@ public class GoalMapper {
         response.setCreatedAt(goal.getCreatedAt());
         response.setLastUpdatedAt(goal.getLastUpdatedAt());
 
-        // New fields - Phase 2
+        // Ledger specific
         response.setGoalType(goal.getGoalType());
-
-        // isLeaf computed using RollupService
-        response.setIsLeaf(
-            rollupService.isLeafGoal(goal.getUuid(), goal.getUserId())
-        );
-
-        response.setIsTracked(
-            (goal.getTargetFrequencyWeekly() != null
-                && goal.getTargetFrequencyWeekly() > 0)
-            ||
-            (goal.getEvaluationPeriod() != null
-                && goal.getTargetPerPeriod() != null
-                && goal.getTargetPerPeriod() > 0)
-        );
-
-        response.setTargetFrequencyWeekly(goal.getTargetFrequencyWeekly());
-        response.setTargetVolumeDaily(goal.getTargetVolumeDaily());
-
+        response.setIsLeaf(rollupService.isLeafGoal(goal.getUuid(), goal.getUserId()));
+        response.setIsTracked(goal.getScheduleSpec() != null);
         response.setScheduleType(goal.getScheduleType());
-        response.setScheduleDays(goal.getScheduleDaysList());
+        response.setScheduleSpec(goal.getScheduleSpec());
         response.setMinimumSessionPeriod(goal.getMinimumSessionPeriod());
-        response.setMinimumSessionDaily(goal.getMinimumSessionDaily());
+        response.setMaximumSessionPeriod(goal.getMaximumSessionPeriod());
+        response.setMinimumTimeCommittedPeriod(goal.getMinimumTimeCommittedPeriod());
+        response.setMinimumTimeCommittedDaily(goal.getMinimumTimeCommittedDaily());
         response.setAllowDoubleLogging(goal.getAllowDoubleLogging());
-
         response.setMissesAllowedPerPeriod(goal.getMissesAllowedPerPeriod());
-
+        response.setScheduleDays(goal.getScheduleDays());
+        response.setScheduleDaysList(goal.getScheduleDaysList());
         response.setEffectiveConsistencyWeight(goal.getEffectiveConsistencyWeight());
         response.setEffectiveMomentumWeight(goal.getEffectiveMomentumWeight());
         response.setEffectiveProgressWeight(goal.getEffectiveProgressWeight());
-
         response.setConsistencyWeight(goal.getConsistencyWeight());
         response.setMomentumWeight(goal.getMomentumWeight());
         response.setProgressWeight(goal.getProgressWeight());
-
         response.setConsistencyScore(goal.getConsistencyScore());
         response.setMomentumScore(goal.getMomentumScore());
         response.setHealthScore(goal.getHealthScore());
         response.setHealthStatus(goal.getHealthStatus());
 
-        // For parent goals, calculate rolled-up health score
         if (!response.getIsLeaf()) {
-            List<Goal> children = goalRepository
-                .findByParentGoalIdAndUserIdAndIsDeletedFalse(
-                    goal.getUuid(), goal.getUserId()
-                );
-            Double rolledUpScore =
-                rollupService.calculateRolledUpHealthScore(children);
+            List<Goal> children = goalRepository.findByParentGoalIdAndUserIdAndIsDeletedFalse(goal.getUuid(), goal.getUserId());
+            Double rolledUpScore = rollupService.calculateRolledUpHealthScore(children);
             if (rolledUpScore != null) {
                 response.setHealthScore(rolledUpScore);
             }
@@ -272,56 +174,24 @@ public class GoalMapper {
         response.setCurrentStreak(goal.getCurrentStreak());
         response.setLongestStreak(goal.getLongestStreak());
 
-        // parentInsights populated using RollupService
         if (!response.getIsLeaf()) {
-            response.setParentInsights(
-                rollupService.buildParentInsights(
-                    goal.getId(), goal.getUserId()
-                )
-            );
+            response.setParentInsights(rollupService.buildParentInsights(goal.getId(), goal.getUserId()));
         } else {
             response.setParentInsights(null);
         }
 
-        // === PHASE 9 mappings ===
-        response.setEvaluationPeriod(goal.getEvaluationPeriod());
-        response.setTargetPerPeriod(goal.getTargetPerPeriod());
-        response.setCustomPeriodDays(goal.getCustomPeriodDays());
-        response.setCurrentPeriodStart(goal.getCurrentPeriodStart());
-        response.setCurrentPeriodCount(goal.getCurrentPeriodCount());
-        response.setPeriodConsistencyScore(
-            goal.getPeriodConsistencyScore()
-        );
-        
         return response;
     }
     
-    /**
-     * Convert list of Goal entities to GoalResponse list
-     */
     public List<GoalResponse> toResponseList(List<Goal> goals) {
-        return goals.stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+        return goals.stream().map(this::toResponse).collect(Collectors.toList());
     }
     
-    /**
-     * Build hierarchical goal tree structure
-     */
     public List<GoalResponse> buildGoalTree(List<Goal> goals) {
-        // Convert all goals to responses
         List<GoalResponse> responses = toResponseList(goals);
+        Map<String, GoalResponse> goalMap = responses.stream().collect(Collectors.toMap(GoalResponse::getUuid, goal -> goal));
+        List<GoalResponse> rootGoals = responses.stream().filter(goal -> goal.getParentGoalId() == null).collect(Collectors.toList());
         
-        // Create a map for quick lookup by UUID
-        Map<String, GoalResponse> goalMap = responses.stream()
-                .collect(Collectors.toMap(GoalResponse::getUuid, goal -> goal));
-        
-        // Build the tree structure
-        List<GoalResponse> rootGoals = responses.stream()
-                .filter(goal -> goal.getParentGoalId() == null)
-                .collect(Collectors.toList());
-        
-        // Assign children to their parents
         responses.stream()
                 .filter(goal -> goal.getParentGoalId() != null)
                 .forEach(goal -> {
@@ -337,58 +207,32 @@ public class GoalMapper {
         return rootGoals;
     }
     
-    /**
-     * Calculate progress percentage based on current and target values
-     */
     public Double calculateProgressPercentage(Goal goal) {
-        if (goal.getTargetValue() == null || goal.getTargetValue() == 0) {
-            return 0.0;
-        }
-        
+        if (goal.getTargetValue() == null || goal.getTargetValue() == 0) return 0.0;
         Double currentValue = goal.getCurrentValue() != null ? goal.getCurrentValue() : 0.0;
         Double targetValue = goal.getTargetValue();
         
         switch (goal.getTargetOperator()) {
-            case GREATER_THAN:
-                return Math.min(100.0, (currentValue / targetValue) * 100.0);
-            case EQUAL:
-                return currentValue.equals(targetValue) ? 100.0 : 0.0;
+            case GREATER_THAN: return Math.min(100.0, (currentValue / targetValue) * 100.0);
+            case EQUAL: return currentValue.equals(targetValue) ? 100.0 : 0.0;
             case LESS_THAN:
-                if (currentValue <= targetValue) {
-                    return 100.0;
-                } else {
-                    // Progress decreases as we exceed the target
-                    return Math.max(0.0, 100.0 - ((currentValue - targetValue) / targetValue) * 100.0);
-                }
-            default:
-                return 0.0;
+                if (currentValue <= targetValue) return 100.0;
+                else return Math.max(0.0, 100.0 - ((currentValue - targetValue) / targetValue) * 100.0);
+            default: return 0.0;
         }
     }
     
-    /**
-     * Auto-update status based on progress and target date
-     */
     public void updateStatusBasedOnProgress(Goal goal) {
         LocalDateTime now = LocalDateTime.now();
-        
-        // If progress is 100%, mark as completed
         if (goal.getProgressPercentage() >= 100.0 && goal.getStatus() != Goal.Status.COMPLETED) {
             goal.setStatus(Goal.Status.COMPLETED);
             goal.setCompletedDate(now);
         }
-        
-        // If target date has passed and not completed, mark as overdue
-        if (goal.getTargetDate() != null && 
-            goal.getTargetDate().isBefore(now) && 
-            goal.getStatus() != Goal.Status.COMPLETED) {
+        if (goal.getTargetDate() != null && goal.getTargetDate().isBefore(now) && goal.getStatus() != Goal.Status.COMPLETED) {
             goal.setStatus(Goal.Status.OVERDUE);
         }
-        
-        // If progress > 0 and < 100 and not overdue, mark as in progress
-        if (goal.getProgressPercentage() > 0.0 && 
-            goal.getProgressPercentage() < 100.0 && 
-            goal.getStatus() != Goal.Status.OVERDUE &&
-            goal.getStatus() == Goal.Status.NOT_STARTED) {
+        if (goal.getProgressPercentage() > 0.0 && goal.getProgressPercentage() < 100.0 && 
+            goal.getStatus() != Goal.Status.OVERDUE && goal.getStatus() == Goal.Status.NOT_STARTED) {
             goal.setStatus(Goal.Status.IN_PROGRESS);
         }
     }

@@ -1,4 +1,4 @@
-package com.sagarpandey.activity_tracker.Service.Interface;
+git package com.sagarpandey.activity_tracker.Service.Interface;
 
 import com.sagarpandey.activity_tracker.dtos.ActivityResponse;
 import com.sagarpandey.activity_tracker.models.Activity;
@@ -10,6 +10,7 @@ public interface ActivityServiceInterface {
     Activity create(HashMap<String, String> ActivityInfo);
     Activity read(Long id);
     List<ActivityResponse> readAll();
+    List<ActivityResponse> readAll(String userId);
     void update(HashMap<String, String> ActivityInfo);
     void delete(Long id);
 }

@@ -3,7 +3,7 @@ package com.sagarpandey.activity_tracker.Service.V1;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalStatusService;
 import com.sagarpandey.activity_tracker.models.Goal;
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
-import com.sagarpandey.activity_tracker.enums.EvaluationPeriod;
+import com.sagarpandey.activity_tracker.enums.GoalType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -140,11 +140,11 @@ public class GoalStatusServiceV1 implements GoalStatusService {
             }
         }
         
-        // Check if streak is broken (for habit goals)
+        // Check if streak is broken (for habit/fitness goals)
         if (goal.getCurrentStreak() != null && goal.getCurrentStreak() == 0 && 
-            goal.getEvaluationPeriod() != null && 
-            (goal.getEvaluationPeriod() == EvaluationPeriod.DAILY || 
-             goal.getEvaluationPeriod() == EvaluationPeriod.WEEKLY)) {
+            goal.getGoalType() != null && 
+            (goal.getGoalType() == GoalType.HABIT || 
+             goal.getGoalType() == GoalType.FITNESS)) {
             return true;
         }
         

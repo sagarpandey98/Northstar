@@ -23,7 +23,6 @@ package com.sagarpandey.activity_tracker.models;
  * longest_streak               INTEGER
  */
 
-import com.sagarpandey.activity_tracker.enums.EvaluationPeriod;
 import com.sagarpandey.activity_tracker.enums.GoalType;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
 import com.sagarpandey.activity_tracker.enums.ScheduleDay;
@@ -35,6 +34,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.sagarpandey.activity_tracker.models.ScheduleSpec;
 
 @Entity
 @Table(name = "goals", uniqueConstraints = {@UniqueConstraint(columnNames = {"uuid"})})
@@ -70,6 +70,20 @@ public class Goal {
 
     @Column(length = 1000)
     private String notes;
+
+    @Column(name = "schedule_spec", columnDefinition = "TEXT")
+    @Convert(converter = com.sagarpandey.activity_tracker.Mapper.ScheduleSpecConverter.class)
+    private ScheduleSpec scheduleSpec;
+    @Column(name = "maximum_session_period")
+    private Integer maximumSessionPeriod;
+
+    @Column(name = "minimum_time_committed_period")
+    private Integer minimumTimeCommittedPeriod;
+    // How much time (in minutes) the user commits per period for this goal
+    // e.g. 60 means "I can give at least 1 hour per period"
+
+    @Column(name = "minimum_time_committed_daily")
+    private Integer minimumTimeCommittedDaily;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -217,46 +231,6 @@ public class Goal {
     // DO NOT add isLeaf as a DB column
     // It will be added to the response DTO in a later phase
 
-    // === NEW FIELDS - PHASE 9 ===
-
-    // The period over which progress/consistency is evaluated
-    // If null, falls back to weekly system (existing behavior)
-    @Enumerated(EnumType.STRING)
-    @Column(name = "evaluation_period")
-    private EvaluationPeriod evaluationPeriod;
-
-    // Target count per evaluation period
-    // e.g. 4 books per MONTHLY period
-    // e.g. 2 problems per DAILY period
-    // If null, uses targetFrequencyWeekly for WEEKLY period
-    @Column(name = "target_per_period")
-    private Integer targetPerPeriod;
-
-    // Only used when evaluationPeriod = CUSTOM
-    // Defines the number of days in one custom period
-    // e.g. customPeriodDays=10 means target resets every 10 days
-    @Column(name = "custom_period_days")
-    private Integer customPeriodDays;
-
-    // Stores the start date of the current evaluation period
-    // Updated automatically when period rolls over
-    // e.g. for MONTHLY: first day of current month
-    // e.g. for DAILY: today
-    // e.g. for CUSTOM: date when current period started
-    @Column(name = "current_period_start")
-    private LocalDate currentPeriodStart;
-
-    // Activities logged in the current evaluation period
-    // Reset to 0 when period rolls over
-    // Incremented when activity linked to this goal is logged
-    @Column(name = "current_period_count")
-    private Integer currentPeriodCount;
-
-    // Consistency score for current evaluation period
-    // = min(100, currentPeriodCount / targetPerPeriod * 100)
-    // Recalculated on every activity log
-    @Column(name = "period_consistency_score")
-    private Double periodConsistencyScore;
 
     // Default constructor
     public Goal() {}
@@ -379,73 +353,12 @@ public class Goal {
     public Integer getLongestStreak() { return longestStreak; }
     public void setLongestStreak(Integer longestStreak) { this.longestStreak = longestStreak; }
 
-    // === PHASE 9 GETTERS AND SETTERS ===
 
-    public EvaluationPeriod getEvaluationPeriod() 
-        { return evaluationPeriod; }
-    public void setEvaluationPeriod(EvaluationPeriod evaluationPeriod) 
-        { this.evaluationPeriod = evaluationPeriod; }
+    public Integer getMinimumTimeCommittedPeriod() { return minimumTimeCommittedPeriod; }
+    public void setMinimumTimeCommittedPeriod(Integer minimumTimeCommittedPeriod) { this.minimumTimeCommittedPeriod = minimumTimeCommittedPeriod; }
 
-    public Integer getTargetPerPeriod() { return targetPerPeriod; }
-    public void setTargetPerPeriod(Integer targetPerPeriod) 
-        { this.targetPerPeriod = targetPerPeriod; }
-
-    public Integer getCustomPeriodDays() { return customPeriodDays; }
-    public void setCustomPeriodDays(Integer customPeriodDays) 
-        { this.customPeriodDays = customPeriodDays; }
-
-    public LocalDate getCurrentPeriodStart() 
-        { return currentPeriodStart; }
-    public void setCurrentPeriodStart(LocalDate currentPeriodStart) 
-        { this.currentPeriodStart = currentPeriodStart; }
-
-    public Integer getCurrentPeriodCount() 
-        { return currentPeriodCount; }
-    public void setCurrentPeriodCount(Integer currentPeriodCount) 
-        { this.currentPeriodCount = currentPeriodCount; }
-
-    public Double getPeriodConsistencyScore() 
-        { return periodConsistencyScore; }
-    public void setPeriodConsistencyScore(Double periodConsistencyScore) 
-        { this.periodConsistencyScore = periodConsistencyScore; }
-
-    // Returns the start of the current evaluation period
-    // based on evaluationPeriod type and a reference date
-    public LocalDate computePeriodStart(LocalDate referenceDate) {
-        if (evaluationPeriod == null) return null;
-        return switch (evaluationPeriod) {
-            case DAILY -> referenceDate;
-            case WEEKLY -> referenceDate.with(
-                java.time.temporal.TemporalAdjusters
-                    .previousOrSame(java.time.DayOfWeek.MONDAY)
-            );
-            case MONTHLY -> referenceDate.withDayOfMonth(1);
-            case QUARTERLY -> {
-                int month = referenceDate.getMonthValue();
-                int quarterStartMonth = ((month - 1) / 3) * 3 + 1;
-                yield referenceDate
-                    .withMonth(quarterStartMonth)
-                    .withDayOfMonth(1);
-            }
-            case YEARLY -> referenceDate.withDayOfYear(1);
-            case CUSTOM -> {
-                // currentPeriodStart is managed externally
-                // return existing or today if null
-                yield currentPeriodStart != null
-                    ? currentPeriodStart
-                    : referenceDate;
-            }
-        };
-    }
-
-    // Returns true if the given date is within the current
-    // evaluation period
-    public boolean isInCurrentPeriod(LocalDate date) {
-        if (evaluationPeriod == null || currentPeriodStart == null)
-            return false;
-        LocalDate periodStart = computePeriodStart(date);
-        return !date.isBefore(periodStart);
-    }
+    public Integer getMinimumTimeCommittedDaily() { return minimumTimeCommittedDaily; }
+    public void setMinimumTimeCommittedDaily(Integer minimumTimeCommittedDaily) { this.minimumTimeCommittedDaily = minimumTimeCommittedDaily; }
 
     // Returns default scheduleType based on goalType
     public ScheduleType getDefaultScheduleType() {
@@ -531,6 +444,12 @@ public class Goal {
             .map(ScheduleDay::name)
             .collect(Collectors.joining(","));
     }
+
+    public ScheduleSpec getScheduleSpec() { return scheduleSpec; }
+    public void setScheduleSpec(ScheduleSpec scheduleSpec) { this.scheduleSpec = scheduleSpec; }
+    
+    public Integer getMaximumSessionPeriod() { return maximumSessionPeriod; }
+    public void setMaximumSessionPeriod(Integer maximumSessionPeriod) { this.maximumSessionPeriod = maximumSessionPeriod; }
 
     @PreUpdate
     public void preUpdate() {

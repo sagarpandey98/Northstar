@@ -9,6 +9,14 @@ import com.sagarpandey.activity_tracker.dtos.ActivityResponse;
 import com.sagarpandey.activity_tracker.enums.GoalType;
 import com.sagarpandey.activity_tracker.enums.ScheduleType;
 import com.sagarpandey.activity_tracker.enums.ScheduleDay;
+import com.sagarpandey.activity_tracker.Repository.GoalPeriodRepository;
+import com.sagarpandey.activity_tracker.models.GoalPeriod;
+import com.sagarpandey.activity_tracker.utils.ScheduleSpecEvaluator;
+import java.time.OffsetDateTime;
+import java.time.Duration;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.Comparator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,39 +47,52 @@ public class SmartTodoServiceV1 implements SmartTodoService {
     
     private final GoalService goalService;
     private final ActivityServiceInterface activityService;
+    private final GoalPeriodRepository goalPeriodRepository;
     
     @Autowired
-    public SmartTodoServiceV1(GoalService goalService, ActivityServiceInterface activityService) {
+    public SmartTodoServiceV1(GoalService goalService, ActivityServiceInterface activityService, GoalPeriodRepository goalPeriodRepository) {
         this.goalService = goalService;
         this.activityService = activityService;
+        this.goalPeriodRepository = goalPeriodRepository;
     }
     
     @Override
     public List<SmartTodoResponse> getTodaySmartTodos(String userId) {
         try {
             List<GoalResponse> allGoals = goalService.getAllGoalsByUser(userId);
-            LocalDate today = LocalDate.now();
-            DayOfWeek todayDayOfWeek = today.getDayOfWeek();
             
-            // Fetch all activities for this user (cache for processing)
-            List<ActivityResponse> allActivities = activityService.readAll();
+            // 1. Determine "User's Today" using their configured timezone
+            // We look for a timezone in any of their scheduleSpecs, defaulting to UTC if none found.
+            ZoneId userZone = ZoneOffset.UTC;
+            for (GoalResponse g : allGoals) {
+                if (g.getScheduleSpec() != null && g.getScheduleSpec().getTimezone() != null) {
+                    try {
+                        userZone = ZoneId.of(g.getScheduleSpec().getTimezone());
+                        break; 
+                    } catch (Exception e) {
+                        // Ignore invalid zone IDs
+                    }
+                }
+            }
+            LocalDate userToday = LocalDate.now(userZone);
+            
+            // 2. Fetch activities for THIS user
+            List<ActivityResponse> allActivities = activityService.readAll(userId);
             
             List<SmartTodoResponse> smartTodos = new ArrayList<>();
             
             for (GoalResponse goalResponse : allGoals) {
-                // Skip null goals and parent goals
-                if (goalResponse == null || 
-                    (goalResponse.getIsLeaf() != null && !goalResponse.getIsLeaf())) {
+                if (goalResponse == null || (goalResponse.getIsLeaf() != null && !goalResponse.getIsLeaf())) {
                     continue;
                 }
                 
-                // Check if goal should appear today based on schedule
-                if (!isScheduledForToday(goalResponse, todayDayOfWeek)) {
-                    continue;
-                }
+                // Build item using the timezone-accurate userToday
+                SmartTodoResponse todo = buildTodoItem(goalResponse, userToday, allActivities);
                 
-                SmartTodoResponse todo = buildTodoItem(goalResponse, today, allActivities);
-                smartTodos.add(todo);
+                // Show if scheduled OR if progress was made today (active task)
+                if (todo.isScheduledForToday() || todo.getCurrentProgress() > 0) {
+                    smartTodos.add(todo);
+                }
             }
             
             // Sort by intelligent priority system
@@ -97,25 +118,32 @@ public class SmartTodoServiceV1 implements SmartTodoService {
      * Determines if a goal should be included in today's todo list
      * based on schedule configuration
      */
-    private boolean isScheduledForToday(GoalResponse goal, DayOfWeek todayDayOfWeek) {
+    private boolean isScheduledForToday(GoalResponse goal, LocalDate today) {
+        DayOfWeek todayDayOfWeek = today.getDayOfWeek();
         ScheduleType scheduleType = goal.getScheduleType();
         
-        if (scheduleType == null || scheduleType == ScheduleType.FLEXIBLE) {
-            return true; // Flexible goals always appear
-        }
-        
+        // 1. Legacy ScheduleDays check
         if (scheduleType == ScheduleType.SPECIFIC_DAYS) {
-            // Check if today is in the scheduled days
-            List<ScheduleDay> scheduledDays = goal.getScheduleDays();
-            if (scheduledDays == null || scheduledDays.isEmpty()) {
-                return true; // No days configured, default to include
+            if (goal.getScheduleDays() != null && !goal.getScheduleDays().isEmpty()) {
+                List<ScheduleDay> scheduledDays = goal.getScheduleDaysList();
+                if (scheduledDays != null && !scheduledDays.isEmpty()) {
+                    if (!scheduledDays.contains(ScheduleDay.valueOf(todayDayOfWeek.name()))) {
+                        return false; // Specifically NOT scheduled for today
+                    }
+                    return true;
+                }
             }
-            
-            ScheduleDay todayScheduleDay = ScheduleDay.valueOf(todayDayOfWeek.name());
-            return scheduledDays.contains(todayScheduleDay);
         }
         
-        return true; // Default to include if schedule type unknown
+        // 2. Phase 4 Rule Engine (ScheduleSpec)
+        if (goal.getScheduleSpec() != null) {
+            // If spec exists, it is the source of truth
+            return ScheduleSpecEvaluator.isActionable(goal.getScheduleSpec(), today);
+        }
+        
+        // Default to true for FLEXIBLE or undefined, 
+        // but if it was SPECIFIC_DAYS and we reached here, it means no days matched
+        return scheduleType != ScheduleType.SPECIFIC_DAYS;
     }
     
     /**
@@ -135,16 +163,18 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         // 2. Schedule information
         todo.setScheduleType(goal.getScheduleType() != null ? 
             goal.getScheduleType().toString() : "FLEXIBLE");
-        todo.setScheduledForToday(true); // Already filtered by isScheduledForToday()
+        todo.setScheduledForToday(isScheduledForToday(goal, today));
         
         // 3. Progress tracking (real data)
         int todayProgress = (int) countTodayActivities(goal.getId(), today, allActivities);
         int todayTarget = calculateTodayTarget(goal);
+        
         todo.setCurrentProgress(todayProgress);
         todo.setTargetProgress(todayTarget);
-        todo.setProgressPercentage((todayTarget > 0) ? 
-            (todayProgress * 100.0 / todayTarget) : 0.0);
-        todo.setCompletedToday(todayProgress >= todayTarget);
+        todo.setProgressPercentage((todayTarget > 0) ? (todayProgress * 100.0 / todayTarget) : 0.0);
+        
+        // Force completedToday to true if progress was made
+        todo.setCompletedToday(todayProgress > 0);
         
         // 4. Streak and urgency detection
         todo.setCurrentStreak(goal.getCurrentStreak());
@@ -159,23 +189,22 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         todo.setUrgencyReason(urgency);
         
         // 5. Time requirements
-        if (goal.getMinimumSessionPeriod() != null) {
-            todo.setMinimumSessionPeriod(goal.getMinimumSessionPeriod());
-        }
-        if (goal.getMinimumSessionDaily() != null) {
-            todo.setMinimumSessionDaily(goal.getMinimumSessionDaily());
-        }
+        todo.setMinimumSessionPeriod(goal.getMinimumTimeCommittedPeriod());
+        todo.setMinimumSessionDaily(goal.getMinimumTimeCommittedDaily());
+        todo.setSuggestedTimeMinutes(calculateSuggestedTime(goal, today));
         
-        Integer suggestedTime = calculateSuggestedTime(goal);
-        todo.setSuggestedTimeMinutes(suggestedTime);
+        // 6. SMART PRIORITY CALCULATION
+        double score = calculateUrgencyScore(todo);
+        todo.setUrgencyScore(score);
+        todo.setSmartPriorityGroup(determinePriorityGroup(score, todo));
         
-        // 6. Last activity info
+        // 7. Last activity info
         LocalDateTime lastActivityDate = getLastActivityDate(goal.getId(), allActivities);
         if (lastActivityDate != null) {
             todo.setLastCompletedDate(lastActivityDate.toLocalDate().toString());
         }
         
-        // 7. Quick log context
+        // 8. Quick log context
         todo.setRequiresQuickLog(todayProgress < todayTarget);
         todo.setQuickLogContext(goal.getTitle());
         
@@ -192,32 +221,57 @@ public class SmartTodoServiceV1 implements SmartTodoService {
      * 4. Scheduled for today (vs not scheduled)
      * 5. Incomplete first (vs already completed today)
      */
+    /**
+     * Intelligent sorting for todo priority using Smart Urgency Score
+     */
     private List<SmartTodoResponse> sortSmartTodos(List<SmartTodoResponse> todos) {
         return todos.stream()
             .sorted((a, b) -> {
-                // Primary: Goal priority (CRITICAL/HIGH/MEDIUM/LOW)
-                int priorityCompare = a.getPriority().ordinal() - b.getPriority().ordinal();
-                if (priorityCompare != 0) return priorityCompare;
+                // 1. Incomplete first
+                if (a.isCompletedToday() != b.isCompletedToday()) {
+                    return a.isCompletedToday() ? 1 : -1;
+                }
                 
-                // Secondary: Streak at risk - urgent!
-                if (a.isStreakAtRisk() && !b.isStreakAtRisk()) return -1;
-                if (b.isStreakAtRisk() && !a.isStreakAtRisk()) return 1;
+                // 2. Sort by smart urgency score (Highest score first for incomplete)
+                if (a.getUrgencyScore() != null && b.getUrgencyScore() != null) {
+                    return b.getUrgencyScore().compareTo(a.getUrgencyScore()) * -1;
+                }
                 
-                // Tertiary: Behind schedule - needs attention
-                if (a.isBehindSchedule() && !b.isBehindSchedule()) return -1;
-                if (b.isBehindSchedule() && !a.isBehindSchedule()) return 1;
-                
-                // Quaternary: Scheduled for today
-                if (a.isScheduledForToday() && !b.isScheduledForToday()) return -1;
-                if (b.isScheduledForToday() && !a.isScheduledForToday()) return 1;
-                
-                // Quinary: Incomplete first (higher priority than already completed)
-                if (a.isCompletedToday() && !b.isCompletedToday()) return 1;
-                if (b.isCompletedToday() && !a.isCompletedToday()) return -1;
-                
-                return 0;
+                // Fallback to legacy priority
+                return b.getPriority().compareTo(a.getPriority());
             })
             .collect(Collectors.toList());
+    }
+    
+    /**
+     * Calculates a dynamic urgency score (0-100) based on multiple factors
+     */
+    private double calculateUrgencyScore(SmartTodoResponse todo) {
+        // Base score by priority: CRITICAL: 40, HIGH: 30, MEDIUM: 20, LOW: 10
+        double score = (todo.getPriority().ordinal() + 1) * 10.0;
+        
+        // Multipliers/Addons
+        if (todo.isStreakAtRisk()) score += 25;    // Streak is top priority
+        if (todo.isBehindSchedule()) score += 15;  // Falling behind is next
+        
+        // Suggested time influence (Complexity/Commitment)
+        if (todo.getSuggestedTimeMinutes() != null) {
+            if (todo.getSuggestedTimeMinutes() >= 60) score += 10;
+            else if (todo.getSuggestedTimeMinutes() >= 30) score += 5;
+        }
+        
+        // Scheduled vs Unscheduled (bonus for scheduled today)
+        if (todo.isScheduledForToday()) score += 10;
+        
+        return Math.min(100.0, score);
+    }
+    
+    private String determinePriorityGroup(double score, SmartTodoResponse todo) {
+        if (todo.isCompletedToday()) return "COMPLETED";
+        if (score >= 80) return "CRITICAL PACE";
+        if (score >= 60) return "URGENT";
+        if (score >= 40) return "IMPORTANT";
+        return "DAILY TRACK";
     }
     
     // ===================================================================
@@ -241,7 +295,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         
         // Check if goal was scheduled yesterday
         LocalDate yesterday = today.minusDays(1);
-        if (!isScheduledForToday(goal, yesterday.getDayOfWeek())) {
+        if (!isScheduledForToday(goal, yesterday)) {
             return false; // Not scheduled yesterday, no streak risk
         }
         
@@ -261,8 +315,8 @@ public class SmartTodoServiceV1 implements SmartTodoService {
      */
     private boolean isBehindSchedule(GoalResponse goal, LocalDate today,
                                      List<ActivityResponse> allActivities) {
-        // Only applies to goals with frequency targets
-        if (goal.getTargetFrequencyWeekly() == null || goal.getTargetFrequencyWeekly() <= 0) {
+        // Note: Ledger DSL frequency tracking to be applied in Phase 4.
+        if (goal.getScheduleSpec() == null) {
             return false;
         }
         
@@ -278,9 +332,9 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             weekActivities += countTodayActivities(goal.getId(), dayInWeek, allActivities);
         }
         
-        // Calculate expected progress (days passed this week / 7 * frequency)
+        // Calculate expected progress (days passed this week / 7 * arbitrary default frequency fallback 3)
         int daysIntoWeek = today.getDayOfWeek().getValue();
-        double expectedProgress = (daysIntoWeek / 7.0) * goal.getTargetFrequencyWeekly();
+        double expectedProgress = (daysIntoWeek / 7.0) * 3;
         
         // Behind if less than 50% of expected
         return weekActivities < (expectedProgress * 0.5);
@@ -324,12 +378,30 @@ public class SmartTodoServiceV1 implements SmartTodoService {
     /**
      * Checks if an activity occurred on the given date
      */
-    private boolean isActivityOnDate(ActivityResponse activity, LocalDate date) {
+    private boolean isActivityOnDate(ActivityResponse activity, LocalDate targetDate) {
         try {
-            // Try startTime first (preferred)
+            // Check startTime (OffsetDateTime)
             if (activity.getStartTime() != null) {
-                LocalDate activityDate = activity.getStartTime().toLocalDate();
-                return activityDate.equals(date);
+                // We compare the LocalDate of the activity in ITS OWN offset.
+                // However, if the user is in +05:30 and it's 01:00 AM April 15, 
+                // and the server is UTC April 14, targetDate will be April 14.
+                // We should match if it's "close enough" or if the activity's local date matches targetDate.
+                LocalDate activityLocal = activity.getStartTime().toLocalDate();
+                
+                if (activityLocal.equals(targetDate)) return true;
+                
+                // Special case for UTC servers: if user is ahead of server, 
+                // 'today' on server might be yesterday for user.
+                // We check if the activity happened in the last 24 hours relative to "now".
+                OffsetDateTime activityTime = activity.getStartTime();
+                OffsetDateTime now = OffsetDateTime.now(activityTime.getOffset());
+                if (Duration.between(activityTime, now).toHours() < 24 && activityTime.isBefore(now.plusMinutes(5))) {
+                    // Logic: If the activity is very recent (last 24h), and the goal is daily tracking,
+                    // we count it towards "today's" status in the UI to give immediate feedback.
+                    return true;
+                }
+                
+                return false;
             }
             
             // Fallback to created_at
@@ -337,7 +409,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
                 String dateStr = activity.getCreated_at();
                 if (dateStr.length() >= 10) {
                     LocalDate activityDate = LocalDate.parse(dateStr.substring(0, 10));
-                    return activityDate.equals(date);
+                    return activityDate.equals(targetDate);
                 }
             }
         } catch (Exception e) {
@@ -382,10 +454,9 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             return 1;
         }
         
-        // FLEXIBLE goals
-        if (goal.getTargetFrequencyWeekly() != null && goal.getTargetFrequencyWeekly() > 0) {
-            // Spread weekly target across 7 days
-            return Math.max(1, goal.getTargetFrequencyWeekly() / 7);
+        // Note: Stubbed for Phase 4 rule engine evaluation. 
+        if (goal.getScheduleSpec() != null) {
+            return 1;
         }
         
         // Default target if nothing configured
@@ -400,16 +471,64 @@ public class SmartTodoServiceV1 implements SmartTodoService {
      * - minimumSessionPeriod (total for period)
      * - Goal type adjustments (PROJECT +15 min, SKILL +30 min)
      */
-    private Integer calculateSuggestedTime(GoalResponse goal) {
-        Integer suggestedTime = 30; // Default 30 minutes
-        
-        // Use minimumSessionDaily if available (preferred)
-        if (goal.getMinimumSessionDaily() != null && goal.getMinimumSessionDaily() > 0) {
-            suggestedTime = goal.getMinimumSessionDaily();
-        } else if (goal.getMinimumSessionPeriod() != null && goal.getMinimumSessionPeriod() > 0) {
-            // Estimate daily from period
-            suggestedTime = Math.max(suggestedTime, goal.getMinimumSessionPeriod() / 7);
+    private Integer calculateSuggestedTime(GoalResponse goal, LocalDate today) {
+        Optional<GoalPeriod> activePeriodOpt = goalPeriodRepository.findActivePeriodForGoal(goal.getId(), today);
+
+        if (activePeriodOpt.isPresent()) {
+            GoalPeriod period = activePeriodOpt.get();
+            
+            // If the goal has an explicit time commitment, honor it regardless of metric
+            Integer periodMin = period.getMinimumTimeCommittedPeriod();
+            if (periodMin == null) periodMin = goal.getMinimumTimeCommittedPeriod();
+            
+            Integer dailyMin = period.getMinimumTimeCommittedDaily();
+            if (dailyMin == null) dailyMin = goal.getMinimumTimeCommittedDaily();
+
+            if (dailyMin != null && dailyMin > 0) {
+                return dailyMin;
+            }
+
+            if (periodMin != null && periodMin > 0) {
+                double spent = period.getCurrentValue() != null && period.getMetric() == com.sagarpandey.activity_tracker.models.Goal.Metric.DURATION 
+                                ? period.getCurrentValue() : 0.0;
+                double remaining = Math.max(0, periodMin - spent);
+                
+                // Calculate remaining actionable days in this period
+                int remainingDays = ScheduleSpecEvaluator.countActionableDays(
+                    today, period.getPeriodEnd(), goal.getScheduleSpec()
+                );
+                
+                // If frequency is DAILY, we don't divide (each day is its own commitment)
+                boolean isDaily = goal.getScheduleSpec() != null && "DAILY".equalsIgnoreCase(goal.getScheduleSpec().getFrequency());
+                
+                if (isDaily || remainingDays <= 1) return (int) Math.round(remaining);
+                return (int) Math.round(remaining / remainingDays);
+            }
+
+            // If no explicit commitment, follow default logic
+            return calculateDefaultSuggestedTime(goal);
         }
+        
+        return calculateDefaultSuggestedTime(goal);
+    }
+
+    /**
+     * Fallback suggested time logic based on Goal Type and defaults
+     */
+    private Integer calculateDefaultSuggestedTime(GoalResponse goal) {
+        // 1. Check if the goal has a static daily commitment
+        if (goal.getMinimumTimeCommittedDaily() != null && goal.getMinimumTimeCommittedDaily() > 0) {
+            return goal.getMinimumTimeCommittedDaily();
+        }
+
+        // 2. If it is a DAILY goal with a period commitment, then that is the daily target
+        if (goal.getScheduleSpec() != null && "DAILY".equalsIgnoreCase(goal.getScheduleSpec().getFrequency())) {
+            if (goal.getMinimumTimeCommittedPeriod() != null && goal.getMinimumTimeCommittedPeriod() > 0) {
+                return goal.getMinimumTimeCommittedPeriod();
+            }
+        }
+
+        Integer suggestedTime = 30; // Default 30 minutes
         
         // Adjust based on goal type
         if (goal.getGoalType() == GoalType.PROJECT) {

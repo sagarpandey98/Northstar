@@ -4,12 +4,13 @@ import com.sagarpandey.activity_tracker.Exceptions.GoalNotFoundException;
 import com.sagarpandey.activity_tracker.Exceptions.ValidationException;
 import com.sagarpandey.activity_tracker.Mapper.GoalMapper;
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
+import com.sagarpandey.activity_tracker.Repository.GoalPeriodRepository;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalService;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
+import com.sagarpandey.activity_tracker.models.GoalPeriod;
 import com.sagarpandey.activity_tracker.dtos.GoalRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
 import com.sagarpandey.activity_tracker.dtos.GoalStatsResponse;
-import com.sagarpandey.activity_tracker.enums.EvaluationPeriod;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
 import com.sagarpandey.activity_tracker.models.Goal;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +34,9 @@ public class GoalServiceV1 implements GoalService {
     @Autowired
     private GoalHealthService goalHealthService;
     
+    @Autowired
+    private GoalPeriodRepository goalPeriodRepository;
+    
     @Override
     public GoalResponse createGoal(GoalRequest request, String userId) {
         validateGoalRequest(request);
@@ -45,6 +49,54 @@ public class GoalServiceV1 implements GoalService {
         
         Goal goal = goalMapper.toEntity(request, userId);
         Goal savedGoal = goalRepository.save(goal);
+        
+        // Create the very first active Period for this Goal automatically
+        GoalPeriod firstPeriod = new GoalPeriod();
+        firstPeriod.setGoalId(savedGoal.getId());
+        java.time.LocalDate periodStart = savedGoal.getStartDate() != null ? savedGoal.getStartDate().toLocalDate() : java.time.LocalDate.now();
+        // Calculate dynamic period end based on frequency
+        java.time.LocalDate periodEnd = periodStart.plusDays(30); // Default fallback
+        
+        if (savedGoal.getScheduleSpec() != null && savedGoal.getScheduleSpec().getFrequency() != null) {
+            String freq = savedGoal.getScheduleSpec().getFrequency().toUpperCase();
+            switch (freq) {
+                case "DAILY": 
+                    periodEnd = periodStart.plusDays(6); // Weekly recap for daily goals
+                    break;
+                case "WEEKLY":
+                    // Align to end of current week (Sunday)
+                    periodEnd = periodStart.with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY));
+                    break;
+                case "MONTHLY":
+                    // Align to end of current month
+                    periodEnd = periodStart.with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
+                    break;
+            }
+        } else if (savedGoal.getScheduleType() == com.sagarpandey.activity_tracker.enums.ScheduleType.SPECIFIC_DAYS) {
+            // Legacy fallback for specific days: assume weekly
+            periodEnd = periodStart.with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY));
+        }
+
+        firstPeriod.setPeriodEnd(periodEnd);
+        firstPeriod.setStartDate(periodStart);
+        firstPeriod.setMetric(savedGoal.getMetric());
+        firstPeriod.setTargetOperator(savedGoal.getTargetOperator());
+        firstPeriod.setTargetValue(savedGoal.getTargetValue());
+        firstPeriod.setCurrentValue(0.0);
+        firstPeriod.setProgressPercentage(0.0);
+        firstPeriod.setScheduleType(savedGoal.getScheduleType());
+        firstPeriod.setScheduleSpec(savedGoal.getScheduleSpec());
+        firstPeriod.setMinimumSessionPeriod(savedGoal.getMinimumSessionPeriod());
+        firstPeriod.setMaximumSessionPeriod(savedGoal.getMaximumSessionPeriod());
+        firstPeriod.setMinimumTimeCommittedPeriod(savedGoal.getMinimumTimeCommittedPeriod());
+        firstPeriod.setMinimumTimeCommittedDaily(savedGoal.getMinimumTimeCommittedDaily());
+        firstPeriod.setAllowDoubleLogging(savedGoal.getAllowDoubleLogging());
+        firstPeriod.setMissesAllowedPerPeriod(savedGoal.getMissesAllowedPerPeriod());
+        firstPeriod.setConsistencyWeight(savedGoal.getConsistencyWeight());
+        firstPeriod.setMomentumWeight(savedGoal.getMomentumWeight());
+        firstPeriod.setProgressWeight(savedGoal.getProgressWeight());
+        
+        goalPeriodRepository.save(firstPeriod);
         
         return goalMapper.toResponse(savedGoal);
     }
@@ -239,8 +291,7 @@ public class GoalServiceV1 implements GoalService {
 
         // Tracked goals count
         stats.setTrackedGoals((int) allGoals.stream()
-            .filter(g -> g.getTargetFrequencyWeekly() != null
-                && g.getTargetFrequencyWeekly() > 0)
+            .filter(g -> g.getScheduleSpec() != null)
             .count());
 
         // Leaf goals count (no children)
@@ -390,28 +441,13 @@ public class GoalServiceV1 implements GoalService {
             throw new ValidationException("Target date cannot be before start date");
         }
 
-        // === PHASE 9 validations ===
-        if (request.getEvaluationPeriod() != null) {
-
-            // targetPerPeriod required when evaluationPeriod is set
-            if (request.getTargetPerPeriod() == null
-                    || request.getTargetPerPeriod() <= 0) {
-                throw new ValidationException(
-                    "targetPerPeriod is required and must be " +
-                    "greater than 0 when evaluationPeriod is set"
-                );
+        // === NEW TIME BOUND LEDGER VALIDATIONS ===
+        if (request.getScheduleSpec() != null) {
+            if (request.getMinimumSessionPeriod() == null || request.getMinimumSessionPeriod() <= 0) {
+                throw new ValidationException("minimumSessionPeriod is strongly recommended when tracking consistency");
             }
-
-            // customPeriodDays required when CUSTOM period
-            if (request.getEvaluationPeriod()
-                    == EvaluationPeriod.CUSTOM) {
-                if (request.getCustomPeriodDays() == null
-                        || request.getCustomPeriodDays() <= 0) {
-                    throw new ValidationException(
-                        "customPeriodDays is required and must be " +
-                        "greater than 0 when evaluationPeriod is CUSTOM"
-                    );
-                }
+            if (request.getMaximumSessionPeriod() == null || request.getMaximumSessionPeriod() <= 0) {
+                throw new ValidationException("maximumSessionPeriod is strongly recommended when tracking progress limits");
             }
         }
     }

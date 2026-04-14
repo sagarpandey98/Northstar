@@ -1,12 +1,10 @@
 package com.sagarpandey.activity_tracker.dtos;
 
-import com.sagarpandey.activity_tracker.enums.EvaluationPeriod;
 import com.sagarpandey.activity_tracker.enums.GoalType;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
-import com.sagarpandey.activity_tracker.enums.ScheduleDay;
 import com.sagarpandey.activity_tracker.enums.ScheduleType;
 import com.sagarpandey.activity_tracker.models.Goal;
-import java.time.LocalDate;
+import com.sagarpandey.activity_tracker.models.ScheduleSpec;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -17,7 +15,6 @@ public class GoalResponse {
     private String userId;
     private String title;
     private String description;
-    private String notes;
     private Goal.Priority priority;
     private Goal.Status status;
     private Goal.Metric metric;
@@ -33,71 +30,48 @@ public class GoalResponse {
     private LocalDateTime createdAt;
     private LocalDateTime lastUpdatedAt;
     
-    // Child goals for hierarchical structure
     private List<GoalResponse> childGoals;
 
-    // === NEW FIELDS - PHASE 2 ===
-
-    // Goal type
+    // === NEW FIELDS ===
     private GoalType goalType;
-
-    // Leaf/parent flag
-    // true if this goal has no children
-    // Computed at query time, never stored in DB
     private Boolean isLeaf;
-
-    // Tracking configured flag
-    // true if targetFrequencyWeekly is set
-    // Computed at mapping time
-    // Frontend uses this to show "Set up tracking" prompt
     private Boolean isTracked;
 
-    // Frequency targets
-    private Integer targetFrequencyWeekly;
-    private Integer targetVolumeDaily;
-
-    // Schedule configuration
+    // Time-Bounded Ledger Bounds
     private ScheduleType scheduleType;
-    private List<ScheduleDay> scheduleDays;
+    private ScheduleSpec scheduleSpec;
     private Integer minimumSessionPeriod;
-    private Integer minimumSessionDaily;
+    private Integer maximumSessionPeriod;
+    private Integer minimumTimeCommittedPeriod;
+    private Integer minimumTimeCommittedDaily;
     private Boolean allowDoubleLogging;
-
-    // Grace period
     private Integer missesAllowedPerPeriod;
+    private String scheduleDays;
+    private List<com.sagarpandey.activity_tracker.enums.ScheduleDay> scheduleDaysList;
 
-    // Effective weights (always returned, even if not explicitly set)
-    // These reflect the actual weights used for health calculation
-    // Derived from goalType defaults if not explicitly configured
+    // Weights
     private Integer effectiveConsistencyWeight;
     private Integer effectiveMomentumWeight;
     private Integer effectiveProgressWeight;
-
-    // Raw weights (only set if user explicitly configured them)
-    // Null if using goalType defaults
     private Integer consistencyWeight;
     private Integer momentumWeight;
     private Integer progressWeight;
 
-    // Health scores
+    // Scores
     private Double consistencyScore;
     private Double momentumScore;
     private Double healthScore;
     private HealthStatus healthStatus;
 
-    // Streak data
+    // Streaks
     private Integer currentStreak;
     private Integer longestStreak;
 
-    // Parent insights block
-    // Only populated for non-leaf goals (isLeaf = false)
-    // Null for leaf goals
+    // Rollup Insights
     private ParentInsights parentInsights;
 
-    // Default constructor
     public GoalResponse() {}
 
-    // Getters and setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -112,9 +86,6 @@ public class GoalResponse {
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
-
-    public String getNotes() { return notes; }
-    public void setNotes(String notes) { this.notes = notes; }
 
     public Goal.Priority getPriority() { return priority; }
     public void setPriority(Goal.Priority priority) { this.priority = priority; }
@@ -170,23 +141,23 @@ public class GoalResponse {
     public Boolean getIsTracked() { return isTracked; }
     public void setIsTracked(Boolean isTracked) { this.isTracked = isTracked; }
 
-    public Integer getTargetFrequencyWeekly() { return targetFrequencyWeekly; }
-    public void setTargetFrequencyWeekly(Integer targetFrequencyWeekly) { this.targetFrequencyWeekly = targetFrequencyWeekly; }
-
-    public Integer getTargetVolumeDaily() { return targetVolumeDaily; }
-    public void setTargetVolumeDaily(Integer targetVolumeDaily) { this.targetVolumeDaily = targetVolumeDaily; }
-
     public ScheduleType getScheduleType() { return scheduleType; }
     public void setScheduleType(ScheduleType scheduleType) { this.scheduleType = scheduleType; }
 
-    public List<ScheduleDay> getScheduleDays() { return scheduleDays; }
-    public void setScheduleDays(List<ScheduleDay> scheduleDays) { this.scheduleDays = scheduleDays; }
+    public ScheduleSpec getScheduleSpec() { return scheduleSpec; }
+    public void setScheduleSpec(ScheduleSpec scheduleSpec) { this.scheduleSpec = scheduleSpec; }
 
     public Integer getMinimumSessionPeriod() { return minimumSessionPeriod; }
     public void setMinimumSessionPeriod(Integer minimumSessionPeriod) { this.minimumSessionPeriod = minimumSessionPeriod; }
 
-    public Integer getMinimumSessionDaily() { return minimumSessionDaily; }
-    public void setMinimumSessionDaily(Integer minimumSessionDaily) { this.minimumSessionDaily = minimumSessionDaily; }
+    public Integer getMaximumSessionPeriod() { return maximumSessionPeriod; }
+    public void setMaximumSessionPeriod(Integer maximumSessionPeriod) { this.maximumSessionPeriod = maximumSessionPeriod; }
+
+    public Integer getMinimumTimeCommittedPeriod() { return minimumTimeCommittedPeriod; }
+    public void setMinimumTimeCommittedPeriod(Integer minimumTimeCommittedPeriod) { this.minimumTimeCommittedPeriod = minimumTimeCommittedPeriod; }
+
+    public Integer getMinimumTimeCommittedDaily() { return minimumTimeCommittedDaily; }
+    public void setMinimumTimeCommittedDaily(Integer minimumTimeCommittedDaily) { this.minimumTimeCommittedDaily = minimumTimeCommittedDaily; }
 
     public Boolean getAllowDoubleLogging() { return allowDoubleLogging; }
     public void setAllowDoubleLogging(Boolean allowDoubleLogging) { this.allowDoubleLogging = allowDoubleLogging; }
@@ -233,39 +204,9 @@ public class GoalResponse {
     public ParentInsights getParentInsights() { return parentInsights; }
     public void setParentInsights(ParentInsights parentInsights) { this.parentInsights = parentInsights; }
 
-    // === NEW FIELDS - PHASE 9 ===
-    private EvaluationPeriod evaluationPeriod;
-    private Integer targetPerPeriod;
-    private Integer customPeriodDays;
-    private LocalDate currentPeriodStart;
-    private Integer currentPeriodCount;
-    private Double periodConsistencyScore;
+    public String getScheduleDays() { return scheduleDays; }
+    public void setScheduleDays(String scheduleDays) { this.scheduleDays = scheduleDays; }
 
-    public EvaluationPeriod getEvaluationPeriod() 
-        { return evaluationPeriod; }
-    public void setEvaluationPeriod(EvaluationPeriod evaluationPeriod) 
-        { this.evaluationPeriod = evaluationPeriod; }
-
-    public Integer getTargetPerPeriod() { return targetPerPeriod; }
-    public void setTargetPerPeriod(Integer targetPerPeriod) 
-        { this.targetPerPeriod = targetPerPeriod; }
-
-    public Integer getCustomPeriodDays() { return customPeriodDays; }
-    public void setCustomPeriodDays(Integer customPeriodDays) 
-        { this.customPeriodDays = customPeriodDays; }
-
-    public LocalDate getCurrentPeriodStart() 
-        { return currentPeriodStart; }
-    public void setCurrentPeriodStart(LocalDate currentPeriodStart) 
-        { this.currentPeriodStart = currentPeriodStart; }
-
-    public Integer getCurrentPeriodCount() 
-        { return currentPeriodCount; }
-    public void setCurrentPeriodCount(Integer currentPeriodCount) 
-        { this.currentPeriodCount = currentPeriodCount; }
-
-    public Double getPeriodConsistencyScore() 
-        { return periodConsistencyScore; }
-    public void setPeriodConsistencyScore(Double periodConsistencyScore) 
-        { this.periodConsistencyScore = periodConsistencyScore; }
+    public List<com.sagarpandey.activity_tracker.enums.ScheduleDay> getScheduleDaysList() { return scheduleDaysList; }
+    public void setScheduleDaysList(List<com.sagarpandey.activity_tracker.enums.ScheduleDay> scheduleDaysList) { this.scheduleDaysList = scheduleDaysList; }
 }
