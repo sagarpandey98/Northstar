@@ -19,7 +19,7 @@ public class GoalPeriod {
     private String uuid = UUID.randomUUID().toString();
 
     @Column(name = "goal_id", nullable = false)
-    private Long goalId;
+    private String parentGoalUuid;
 
     // --- Calculation Metrics ---
     @Enumerated(EnumType.STRING)
@@ -30,8 +30,7 @@ public class GoalPeriod {
     @Column(nullable = false)
     private Goal.TargetOperator targetOperator;
 
-    @Column(name = "target_value", nullable = false)
-    private Double targetValue;
+    // Target value comes from parent Goal
 
     @Column(name = "current_value", nullable = false)
     private Double currentValue = 0.0;
@@ -46,12 +45,7 @@ public class GoalPeriod {
     @Column(name = "period_end", nullable = false)
     private LocalDate periodEnd;
 
-    // --- Dates ---
-    @Column(name = "start_date")
-    private LocalDate startDate;
-
-    @Column(name = "target_date")
-    private LocalDate targetDate;
+    // --- Period Boundaries (already defined above) ---
 
     @Column(name = "completed_date")
     private LocalDate completedDate;
@@ -62,17 +56,14 @@ public class GoalPeriod {
     @Column(name = "last_updated_at")
     private LocalDateTime lastUpdatedAt = LocalDateTime.now();
 
-    // --- Schedule ---
-    @Enumerated(EnumType.STRING)
-    @Column(name = "schedule_type")
-    private ScheduleType scheduleType;
+    // --- Schedule (scheduleSpec contains all scheduling info) ---
 
     @Column(name = "schedule_spec", columnDefinition = "text")
     @Convert(converter = com.sagarpandey.activity_tracker.Mapper.ScheduleSpecConverter.class)
     private ScheduleSpec scheduleSpec;
 
     @Column(name = "minimum_session_daily")
-    private Integer minimumSessionDaily;
+    private Double minimumSessionDaily;
 
     @Column(name = "minimum_session_period")
     private Integer minimumSessionPeriod;
@@ -80,11 +71,7 @@ public class GoalPeriod {
     @Column(name = "maximum_session_period")
     private Integer maximumSessionPeriod;
 
-    @Column(name = "minimum_time_committed_period")
-    private Integer minimumTimeCommittedPeriod;
-
-    @Column(name = "minimum_time_committed_daily")
-    private Integer minimumTimeCommittedDaily;
+    // Time commitment comes from parent Goal
 
     // --- Advanced ---
     @Column(name = "allow_double_logging")
@@ -106,6 +93,9 @@ public class GoalPeriod {
 
     @Column(name = "momentum_score")
     private Double momentumScore;
+
+    @Column(name = "progress_score")
+    private Double progressScore;
 
     @Column(name = "current_streak")
     private Integer currentStreak;
@@ -136,8 +126,8 @@ public class GoalPeriod {
     public String getUuid() { return uuid; }
     public void setUuid(String uuid) { this.uuid = uuid; }
 
-    public Long getGoalId() { return goalId; }
-    public void setGoalId(Long goalId) { this.goalId = goalId; }
+    public String getParentGoalUuid() { return parentGoalUuid; }
+    public void setParentGoalUuid(String parentGoalUuid) { this.parentGoalUuid = parentGoalUuid; }
 
     public Goal.Metric getMetric() { return metric; }
     public void setMetric(Goal.Metric metric) { this.metric = metric; }
@@ -145,8 +135,7 @@ public class GoalPeriod {
     public Goal.TargetOperator getTargetOperator() { return targetOperator; }
     public void setTargetOperator(Goal.TargetOperator targetOperator) { this.targetOperator = targetOperator; }
 
-    public Double getTargetValue() { return targetValue; }
-    public void setTargetValue(Double targetValue) { this.targetValue = targetValue; }
+    // Target value comes from parent Goal
 
     public Double getCurrentValue() { return currentValue; }
     public void setCurrentValue(Double currentValue) { this.currentValue = currentValue; }
@@ -160,11 +149,7 @@ public class GoalPeriod {
     public LocalDate getPeriodEnd() { return periodEnd; }
     public void setPeriodEnd(LocalDate periodEnd) { this.periodEnd = periodEnd; }
 
-    public LocalDate getStartDate() { return startDate; }
-    public void setStartDate(LocalDate startDate) { this.startDate = startDate; }
-
-    public LocalDate getTargetDate() { return targetDate; }
-    public void setTargetDate(LocalDate targetDate) { this.targetDate = targetDate; }
+    // Start/Target dates come from parent Goal
 
     public LocalDate getCompletedDate() { return completedDate; }
     public void setCompletedDate(LocalDate completedDate) { this.completedDate = completedDate; }
@@ -175,14 +160,13 @@ public class GoalPeriod {
     public LocalDateTime getLastUpdatedAt() { return lastUpdatedAt; }
     public void setLastUpdatedAt(LocalDateTime lastUpdatedAt) { this.lastUpdatedAt = lastUpdatedAt; }
 
-    public ScheduleType getScheduleType() { return scheduleType; }
-    public void setScheduleType(ScheduleType scheduleType) { this.scheduleType = scheduleType; }
+    // Schedule type comes from parent Goal via scheduleSpec
 
     public ScheduleSpec getScheduleSpec() { return scheduleSpec; }
     public void setScheduleSpec(ScheduleSpec scheduleSpec) { this.scheduleSpec = scheduleSpec; }
 
-    public Integer getMinimumSessionDaily() { return minimumSessionDaily; }
-    public void setMinimumSessionDaily(Integer minimumSessionDaily) { this.minimumSessionDaily = minimumSessionDaily; }
+    public Double getMinimumSessionDaily() { return minimumSessionDaily; }
+    public void setMinimumSessionDaily(Double minimumSessionDaily) { this.minimumSessionDaily = minimumSessionDaily; }
 
     public Integer getMinimumSessionPeriod() { return minimumSessionPeriod; }
     public void setMinimumSessionPeriod(Integer minimumSessionPeriod) { this.minimumSessionPeriod = minimumSessionPeriod; }
@@ -190,11 +174,7 @@ public class GoalPeriod {
     public Integer getMaximumSessionPeriod() { return maximumSessionPeriod; }
     public void setMaximumSessionPeriod(Integer maximumSessionPeriod) { this.maximumSessionPeriod = maximumSessionPeriod; }
 
-    public Integer getMinimumTimeCommittedPeriod() { return minimumTimeCommittedPeriod; }
-    public void setMinimumTimeCommittedPeriod(Integer minimumTimeCommittedPeriod) { this.minimumTimeCommittedPeriod = minimumTimeCommittedPeriod; }
-
-    public Integer getMinimumTimeCommittedDaily() { return minimumTimeCommittedDaily; }
-    public void setMinimumTimeCommittedDaily(Integer minimumTimeCommittedDaily) { this.minimumTimeCommittedDaily = minimumTimeCommittedDaily; }
+    // Time commitment comes from parent Goal
 
     public Boolean getAllowDoubleLogging() { return allowDoubleLogging; }
     public void setAllowDoubleLogging(Boolean allowDoubleLogging) { this.allowDoubleLogging = allowDoubleLogging; }
@@ -213,6 +193,9 @@ public class GoalPeriod {
 
     public Double getMomentumScore() { return momentumScore; }
     public void setMomentumScore(Double momentumScore) { this.momentumScore = momentumScore; }
+
+    public Double getProgressScore() { return progressScore; }
+    public void setProgressScore(Double progressScore) { this.progressScore = progressScore; }
 
     public Integer getCurrentStreak() { return currentStreak; }
     public void setCurrentStreak(Integer currentStreak) { this.currentStreak = currentStreak; }

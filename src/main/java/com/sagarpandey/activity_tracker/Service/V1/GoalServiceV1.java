@@ -37,6 +37,9 @@ public class GoalServiceV1 implements GoalService {
     @Autowired
     private GoalPeriodRepository goalPeriodRepository;
     
+    @Autowired
+    private com.sagarpandey.activity_tracker.Service.Interface.GoalPeriodService goalPeriodService;
+    
     @Override
     public GoalResponse createGoal(GoalRequest request, String userId) {
         validateGoalRequest(request);
@@ -48,55 +51,28 @@ public class GoalServiceV1 implements GoalService {
         }
         
         Goal goal = goalMapper.toEntity(request, userId);
+        
+        // DEBUG: Print Goal weights after mapping
+        System.out.println("DEBUG: Goal weights after mapping - consistency: " + goal.getConsistencyWeight() + 
+            ", momentum: " + goal.getMomentumWeight() + 
+            ", progress: " + goal.getProgressWeight() + 
+            ", goalType: " + goal.getGoalType());
+        
         Goal savedGoal = goalRepository.save(goal);
+        goalRepository.flush(); // Ensure entity is properly saved and accessible
+        
+        // DEBUG: Print savedGoal weights after save
+        System.out.println("DEBUG: savedGoal weights after save - consistency: " + savedGoal.getConsistencyWeight() + 
+            ", momentum: " + savedGoal.getMomentumWeight() + 
+            ", progress: " + savedGoal.getProgressWeight() + 
+            ", goalType: " + savedGoal.getGoalType());
         
         // Create the very first active Period for this Goal automatically
-        GoalPeriod firstPeriod = new GoalPeriod();
-        firstPeriod.setGoalId(savedGoal.getId());
-        java.time.LocalDate periodStart = savedGoal.getStartDate() != null ? savedGoal.getStartDate().toLocalDate() : java.time.LocalDate.now();
-        // Calculate dynamic period end based on frequency
-        java.time.LocalDate periodEnd = periodStart.plusDays(30); // Default fallback
-        
-        if (savedGoal.getScheduleSpec() != null && savedGoal.getScheduleSpec().getFrequency() != null) {
-            String freq = savedGoal.getScheduleSpec().getFrequency().toUpperCase();
-            switch (freq) {
-                case "DAILY": 
-                    periodEnd = periodStart.plusDays(6); // Weekly recap for daily goals
-                    break;
-                case "WEEKLY":
-                    // Align to end of current week (Sunday)
-                    periodEnd = periodStart.with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY));
-                    break;
-                case "MONTHLY":
-                    // Align to end of current month
-                    periodEnd = periodStart.with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
-                    break;
-            }
-        } else if (savedGoal.getScheduleType() == com.sagarpandey.activity_tracker.enums.ScheduleType.SPECIFIC_DAYS) {
-            // Legacy fallback for specific days: assume weekly
-            periodEnd = periodStart.with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY));
+        // Only for trackable goals (not milestone goals)
+        if (!savedGoal.getIsMilestone()) {
+            GoalPeriod firstPeriod = goalPeriodService.createPeriodForGoal(savedGoal);
+            goalPeriodRepository.save(firstPeriod);
         }
-
-        firstPeriod.setPeriodEnd(periodEnd);
-        firstPeriod.setStartDate(periodStart);
-        firstPeriod.setMetric(savedGoal.getMetric());
-        firstPeriod.setTargetOperator(savedGoal.getTargetOperator());
-        firstPeriod.setTargetValue(savedGoal.getTargetValue());
-        firstPeriod.setCurrentValue(0.0);
-        firstPeriod.setProgressPercentage(0.0);
-        firstPeriod.setScheduleType(savedGoal.getScheduleType());
-        firstPeriod.setScheduleSpec(savedGoal.getScheduleSpec());
-        firstPeriod.setMinimumSessionPeriod(savedGoal.getMinimumSessionPeriod());
-        firstPeriod.setMaximumSessionPeriod(savedGoal.getMaximumSessionPeriod());
-        firstPeriod.setMinimumTimeCommittedPeriod(savedGoal.getMinimumTimeCommittedPeriod());
-        firstPeriod.setMinimumTimeCommittedDaily(savedGoal.getMinimumTimeCommittedDaily());
-        firstPeriod.setAllowDoubleLogging(savedGoal.getAllowDoubleLogging());
-        firstPeriod.setMissesAllowedPerPeriod(savedGoal.getMissesAllowedPerPeriod());
-        firstPeriod.setConsistencyWeight(savedGoal.getConsistencyWeight());
-        firstPeriod.setMomentumWeight(savedGoal.getMomentumWeight());
-        firstPeriod.setProgressWeight(savedGoal.getProgressWeight());
-        
-        goalPeriodRepository.save(firstPeriod);
         
         return goalMapper.toResponse(savedGoal);
     }

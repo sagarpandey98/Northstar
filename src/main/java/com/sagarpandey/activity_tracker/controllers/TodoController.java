@@ -6,8 +6,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -47,6 +49,21 @@ public class TodoController {
         
         String userId = extractUserIdFromJwt(authentication);
         List<SmartTodoResponse> smartTodos = smartTodoService.getTodaySmartTodos(userId);
+        return ResponseEntity.ok(smartTodos);
+    }
+    
+    /**
+     * Get smart todo list for a specific date (including future dates)
+     * 
+     * Example: /api/v1/todos/date?date=2026-04-25
+     */
+    @GetMapping("/date")
+    public ResponseEntity<List<SmartTodoResponse>> getSmartTodosForDate(
+            Authentication authentication,
+            @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        
+        String userId = extractUserIdFromJwt(authentication);
+        List<SmartTodoResponse> smartTodos = smartTodoService.getSmartTodosForDate(userId, date);
         return ResponseEntity.ok(smartTodos);
     }
     

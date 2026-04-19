@@ -45,21 +45,4 @@ public class WeekUtils {
         return !date.isBefore(monday) && !date.isAfter(sunday);
     }
 
-    /**
-     * Calculates consistency score for a week.
-     * Returns null if targetFrequency is null or 0.
-     * Caps at 100.
-     */
-    public static Double calculateConsistencyScore(
-            Integer activitiesLogged,
-            Integer targetFrequencyWeekly) {
-        if (targetFrequencyWeekly == null 
-                || targetFrequencyWeekly == 0) {
-            return null;
-        }
-        if (activitiesLogged == null) return 0.0;
-        double score = (activitiesLogged.doubleValue() 
-            / targetFrequencyWeekly.doubleValue()) * 100.0;
-        return Math.min(100.0, score);
-    }
 }

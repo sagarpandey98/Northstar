@@ -11,12 +11,12 @@ import java.util.Optional;
 public interface GoalPeriodRepository extends JpaRepository<GoalPeriod, Long> {
 
     // Fetch all periods tied to a specific Master Goal
-    List<GoalPeriod> findByGoalId(Long goalId);
+    List<GoalPeriod> findByParentGoalUuid(String parentGoalUuid);
 
     // Fetch a specific period by its strict UUID
     Optional<GoalPeriod> findByUuid(String uuid);
 
-    @org.springframework.data.jpa.repository.Query("SELECT gp FROM GoalPeriod gp WHERE gp.goalId = :goalId AND gp.periodStart <= :date AND gp.periodEnd >= :date")
-    Optional<GoalPeriod> findActivePeriodForGoal(Long goalId, java.time.LocalDate date);
+    @org.springframework.data.jpa.repository.Query("SELECT gp FROM GoalPeriod gp WHERE gp.parentGoalUuid = :parentGoalUuid AND gp.periodStart <= :date AND gp.periodEnd >= :date")
+    Optional<GoalPeriod> findActivePeriodForGoal(String parentGoalUuid, java.time.LocalDate date);
 
 }

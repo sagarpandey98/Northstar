@@ -1,7 +1,6 @@
 package com.sagarpandey.activity_tracker.dtos;
 
 import com.sagarpandey.activity_tracker.enums.GoalType;
-import com.sagarpandey.activity_tracker.enums.ScheduleType;
 import com.sagarpandey.activity_tracker.models.Goal;
 import com.sagarpandey.activity_tracker.models.ScheduleSpec;
 import jakarta.validation.constraints.Min;
@@ -44,7 +43,6 @@ public class GoalRequest {
     // === NEW TIME BOUND LEDGER FIELDS ===
 
     private GoalType goalType;
-    private ScheduleType scheduleType;
     private ScheduleSpec scheduleSpec;
     
     private Integer minimumSessionPeriod;
@@ -100,8 +98,6 @@ public class GoalRequest {
     public GoalType getGoalType() { return goalType; }
     public void setGoalType(GoalType goalType) { this.goalType = goalType; }
 
-    public ScheduleType getScheduleType() { return scheduleType; }
-    public void setScheduleType(ScheduleType scheduleType) { this.scheduleType = scheduleType; }
 
     public ScheduleSpec getScheduleSpec() { return scheduleSpec; }
     public void setScheduleSpec(ScheduleSpec scheduleSpec) { this.scheduleSpec = scheduleSpec; }

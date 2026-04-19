@@ -36,7 +36,7 @@ public class GoalStatsResponse {
     private Double averageHealthScore;
 
     // Count of goals that have tracking configured
-    // (targetFrequencyWeekly is set)
+    // (scheduleSpec is set)
     private Integer trackedGoals;
 
     // Count of goals that are leaf nodes

@@ -25,4 +25,14 @@ public interface SmartTodoService {
      * @return refreshed todo list
      */
     List<SmartTodoResponse> refreshTodayTodos(String userId);
+    
+    /**
+     * Get smart todo list for a specific date
+     * Returns intelligent daily tasks based on schedule, priority, and progress
+     * 
+     * @param userId user ID
+     * @param date target date for todo calculation
+     * @return todo list for specified date
+     */
+    List<SmartTodoResponse> getSmartTodosForDate(String userId, java.time.LocalDate date);
 }

@@ -37,35 +37,35 @@ public class GoalHealthServiceV2 implements GoalHealthService {
     
     @Override
     public Double calculateOverallHealthScore(Goal goal) {
-        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getId());
+        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getUuid());
         if (allPeriods.isEmpty()) return null;
         return allPeriods.stream().mapToDouble(this::calculatePeriodOverallHealthScore).average().orElse(0.0);
     }
     
     @Override
     public Double calculateConsistencyScore(Goal goal) {
-        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getId());
+        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getUuid());
         if (allPeriods.isEmpty()) return null;
         return allPeriods.stream().mapToDouble(this::calculatePeriodConsistencyScore).average().orElse(0.0);
     }
     
     @Override
     public Double calculateMomentumScore(Goal goal) {
-        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getId());
+        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getUuid());
         if (allPeriods.isEmpty()) return null;
         return allPeriods.stream().mapToDouble(this::calculatePeriodMomentumScore).average().orElse(0.0);
     }
     
     @Override
     public Double calculateProgressScore(Goal goal) {
-        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getId());
+        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getUuid());
         if (allPeriods.isEmpty()) return null;
         return allPeriods.stream().mapToDouble(this::calculatePeriodProgressScore).average().orElse(0.0);
     }
 
     @Override
     public void updateGoalHealth(Goal goal) {
-        List<GoalPeriod> periods = fetchSortedPeriods(goal.getId());
+        List<GoalPeriod> periods = fetchSortedPeriods(goal.getUuid());
         
         // Sync real activity data into periods first
         syncActivitiesToPeriods(goal, periods);
@@ -137,7 +137,7 @@ public class GoalHealthServiceV2 implements GoalHealthService {
     
     @Override
     public Double calculatePeriodMomentumScore(GoalPeriod period) {
-        List<GoalPeriod> allHistorical = fetchSortedPeriods(period.getGoalId());
+        List<GoalPeriod> allHistorical = fetchSortedPeriods(period.getParentGoalUuid());
         int currentIndex = allHistorical.indexOf(period);
         
         // Safety grab by UUID if object mapping differs
@@ -177,10 +177,14 @@ public class GoalHealthServiceV2 implements GoalHealthService {
     
     @Override
     public Double calculatePeriodOverallHealthScore(GoalPeriod period) {
-        Goal goal = goalRepository.findById(period.getGoalId()).orElse(null);
-        int cw = (goal != null && goal.getConsistencyWeight() != null) ? goal.getConsistencyWeight() : 33;
-        int mw = (goal != null && goal.getMomentumWeight() != null) ? goal.getMomentumWeight() : 33;
-        int pw = (goal != null && goal.getProgressWeight() != null) ? goal.getProgressWeight() : 34;
+        // First get the parent goal to access userId
+        Optional<Goal> parentGoalOpt = goalRepository.findByUuidAndUserIdAndIsDeletedFalse(period.getParentGoalUuid(), null);
+        if (parentGoalOpt.isEmpty()) return 0.0;
+        Goal parentGoal = parentGoalOpt.get();
+        
+        int cw = (parentGoal != null && parentGoal.getConsistencyWeight() != null) ? parentGoal.getConsistencyWeight() : 33;
+        int mw = (parentGoal != null && parentGoal.getMomentumWeight() != null) ? parentGoal.getMomentumWeight() : 33;
+        int pw = (parentGoal != null && parentGoal.getProgressWeight() != null) ? parentGoal.getProgressWeight() : 34;
         
         double c = calculatePeriodConsistencyScore(period);
         double m = calculatePeriodMomentumScore(period);
@@ -197,7 +201,8 @@ public class GoalHealthServiceV2 implements GoalHealthService {
     public void updateGoalPeriodHealth(GoalPeriod period) {
         period.setConsistencyScore(calculatePeriodConsistencyScore(period));
         period.setMomentumScore(calculatePeriodMomentumScore(period));
-        period.setProgressPercentage(calculatePeriodProgressScore(period));
+        period.setProgressScore(calculatePeriodProgressScore(period));
+        period.setProgressPercentage(calculatePeriodProgressScore(period)); // Keep both for now
         period.setHealthScore(calculatePeriodOverallHealthScore(period));
         goalPeriodRepository.save(period);
     }
@@ -206,10 +211,10 @@ public class GoalHealthServiceV2 implements GoalHealthService {
     // UTILS & DB SYNC
     // ============================================
     
-    private List<GoalPeriod> fetchSortedPeriods(Long goalId) {
-        if(goalId == null) return new ArrayList<>();
-        List<GoalPeriod> periods = goalPeriodRepository.findByGoalId(goalId);
-        periods.sort(Comparator.comparing(GoalPeriod::getStartDate));
+    private List<GoalPeriod> fetchSortedPeriods(String parentGoalUuid) {
+        if(parentGoalUuid == null) return new ArrayList<>();
+        List<GoalPeriod> periods = goalPeriodRepository.findByParentGoalUuid(parentGoalUuid);
+        periods.sort(Comparator.comparing(GoalPeriod::getPeriodStart));
         return periods;
     }
     

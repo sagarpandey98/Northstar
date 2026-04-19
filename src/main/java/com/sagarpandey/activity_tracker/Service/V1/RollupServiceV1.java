@@ -238,10 +238,10 @@ public class RollupServiceV1 implements RollupService {
         double totalWeight = 0.0;
 
         for (Goal child : children) {
-            List<GoalPeriod> periods = periodRepository.findByGoalId(child.getId());
+            List<GoalPeriod> periods = periodRepository.findByParentGoalUuid(child.getUuid());
             Optional<GoalPeriod> lastWeekPeriod = periods.stream()
-                .filter(p -> p.getStartDate() != null && !p.getStartDate().isAfter(lastWeek))
-                .max(java.util.Comparator.comparing(GoalPeriod::getStartDate));
+                .filter(p -> p.getPeriodStart() != null && !p.getPeriodStart().isAfter(lastWeek))
+                .max(java.util.Comparator.comparing(GoalPeriod::getPeriodStart));
 
             if (lastWeekPeriod.isPresent()
                     && lastWeekPeriod.get().getConsistencyScore() != null) {

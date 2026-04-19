@@ -39,7 +39,7 @@ public class GoalMapper {
         goal.setTargetOperator(request.getTargetOperator());
         goal.setTargetValue(request.getTargetValue());
         goal.setCurrentValue(request.getCurrentValue() != null ? request.getCurrentValue() : 0.0);
-        goal.setStartDate(request.getStartDate());
+        goal.setStartDate(request.getStartDate() != null ? request.getStartDate() : LocalDateTime.now());
         goal.setTargetDate(request.getTargetDate());
         goal.setParentGoalId(request.getParentGoalId());
         goal.setIsMilestone(request.getIsMilestone() != null ? request.getIsMilestone() : false);
@@ -49,7 +49,6 @@ public class GoalMapper {
 
         // New Ledger Fields
         goal.setGoalType(request.getGoalType());
-        goal.setScheduleType(request.getScheduleType() != null ? request.getScheduleType() : goal.getDefaultScheduleType());
         goal.setScheduleSpec(request.getScheduleSpec());
         goal.setMinimumSessionPeriod(request.getMinimumSessionPeriod());
         goal.setMaximumSessionPeriod(request.getMaximumSessionPeriod());
@@ -60,10 +59,16 @@ public class GoalMapper {
 
         GoalWeightValidator.validateWeights(request.getConsistencyWeight(), request.getMomentumWeight(), request.getProgressWeight());
 
+        // Set weights - use provided values or goal type defaults
         if (request.getConsistencyWeight() != null) {
             goal.setConsistencyWeight(request.getConsistencyWeight());
             goal.setMomentumWeight(request.getMomentumWeight());
             goal.setProgressWeight(request.getProgressWeight());
+        } else {
+            // Use goal type defaults when weights not provided in request
+            goal.setConsistencyWeight(goal.getEffectiveConsistencyWeight());
+            goal.setMomentumWeight(goal.getEffectiveMomentumWeight());
+            goal.setProgressWeight(goal.getEffectiveProgressWeight());
         }
         
         goal.setProgressPercentage(calculateProgressPercentage(goal));
@@ -93,7 +98,6 @@ public class GoalMapper {
 
         // New Ledger Fields
         goal.setGoalType(request.getGoalType());
-        goal.setScheduleType(request.getScheduleType() != null ? request.getScheduleType() : goal.getDefaultScheduleType());
         goal.setScheduleSpec(request.getScheduleSpec());
         goal.setMinimumSessionPeriod(request.getMinimumSessionPeriod());
         goal.setMaximumSessionPeriod(request.getMaximumSessionPeriod());
@@ -104,11 +108,13 @@ public class GoalMapper {
 
         GoalWeightValidator.validateWeights(request.getConsistencyWeight(), request.getMomentumWeight(), request.getProgressWeight());
 
+        // Set weights - use provided values or keep existing values
         if (request.getConsistencyWeight() != null) {
             goal.setConsistencyWeight(request.getConsistencyWeight());
             goal.setMomentumWeight(request.getMomentumWeight());
             goal.setProgressWeight(request.getProgressWeight());
         }
+        // If no weights provided, they'll use goal type defaults via getEffective*Weight() methods
         
         goal.setProgressPercentage(calculateProgressPercentage(goal));
         updateStatusBasedOnProgress(goal);
@@ -140,7 +146,6 @@ public class GoalMapper {
         response.setGoalType(goal.getGoalType());
         response.setIsLeaf(rollupService.isLeafGoal(goal.getUuid(), goal.getUserId()));
         response.setIsTracked(goal.getScheduleSpec() != null);
-        response.setScheduleType(goal.getScheduleType());
         response.setScheduleSpec(goal.getScheduleSpec());
         response.setMinimumSessionPeriod(goal.getMinimumSessionPeriod());
         response.setMaximumSessionPeriod(goal.getMaximumSessionPeriod());
@@ -148,16 +153,15 @@ public class GoalMapper {
         response.setMinimumTimeCommittedDaily(goal.getMinimumTimeCommittedDaily());
         response.setAllowDoubleLogging(goal.getAllowDoubleLogging());
         response.setMissesAllowedPerPeriod(goal.getMissesAllowedPerPeriod());
-        response.setScheduleDays(goal.getScheduleDays());
-        response.setScheduleDaysList(goal.getScheduleDaysList());
-        response.setEffectiveConsistencyWeight(goal.getEffectiveConsistencyWeight());
-        response.setEffectiveMomentumWeight(goal.getEffectiveMomentumWeight());
-        response.setEffectiveProgressWeight(goal.getEffectiveProgressWeight());
-        response.setConsistencyWeight(goal.getConsistencyWeight());
-        response.setMomentumWeight(goal.getMomentumWeight());
-        response.setProgressWeight(goal.getProgressWeight());
+        response.setConsistencyWeight(goal.getConsistencyWeight() != null ? 
+            goal.getConsistencyWeight() : goal.getEffectiveConsistencyWeight());
+        response.setMomentumWeight(goal.getMomentumWeight() != null ? 
+            goal.getMomentumWeight() : goal.getEffectiveMomentumWeight());
+        response.setProgressWeight(goal.getProgressWeight() != null ? 
+            goal.getProgressWeight() : goal.getEffectiveProgressWeight());
         response.setConsistencyScore(goal.getConsistencyScore());
         response.setMomentumScore(goal.getMomentumScore());
+        response.setProgressScore(goal.getProgressScore());
         response.setHealthScore(goal.getHealthScore());
         response.setHealthStatus(goal.getHealthStatus());
 

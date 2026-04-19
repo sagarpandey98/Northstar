@@ -2,7 +2,6 @@ package com.sagarpandey.activity_tracker.dtos;
 
 import com.sagarpandey.activity_tracker.enums.GoalType;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
-import com.sagarpandey.activity_tracker.enums.ScheduleType;
 import com.sagarpandey.activity_tracker.models.Goal;
 import com.sagarpandey.activity_tracker.models.ScheduleSpec;
 import java.time.LocalDateTime;
@@ -38,7 +37,6 @@ public class GoalResponse {
     private Boolean isTracked;
 
     // Time-Bounded Ledger Bounds
-    private ScheduleType scheduleType;
     private ScheduleSpec scheduleSpec;
     private Integer minimumSessionPeriod;
     private Integer maximumSessionPeriod;
@@ -46,13 +44,8 @@ public class GoalResponse {
     private Integer minimumTimeCommittedDaily;
     private Boolean allowDoubleLogging;
     private Integer missesAllowedPerPeriod;
-    private String scheduleDays;
-    private List<com.sagarpandey.activity_tracker.enums.ScheduleDay> scheduleDaysList;
 
     // Weights
-    private Integer effectiveConsistencyWeight;
-    private Integer effectiveMomentumWeight;
-    private Integer effectiveProgressWeight;
     private Integer consistencyWeight;
     private Integer momentumWeight;
     private Integer progressWeight;
@@ -60,6 +53,7 @@ public class GoalResponse {
     // Scores
     private Double consistencyScore;
     private Double momentumScore;
+    private Double progressScore;
     private Double healthScore;
     private HealthStatus healthStatus;
 
@@ -141,9 +135,6 @@ public class GoalResponse {
     public Boolean getIsTracked() { return isTracked; }
     public void setIsTracked(Boolean isTracked) { this.isTracked = isTracked; }
 
-    public ScheduleType getScheduleType() { return scheduleType; }
-    public void setScheduleType(ScheduleType scheduleType) { this.scheduleType = scheduleType; }
-
     public ScheduleSpec getScheduleSpec() { return scheduleSpec; }
     public void setScheduleSpec(ScheduleSpec scheduleSpec) { this.scheduleSpec = scheduleSpec; }
 
@@ -165,15 +156,6 @@ public class GoalResponse {
     public Integer getMissesAllowedPerPeriod() { return missesAllowedPerPeriod; }
     public void setMissesAllowedPerPeriod(Integer missesAllowedPerPeriod) { this.missesAllowedPerPeriod = missesAllowedPerPeriod; }
 
-    public Integer getEffectiveConsistencyWeight() { return effectiveConsistencyWeight; }
-    public void setEffectiveConsistencyWeight(Integer effectiveConsistencyWeight) { this.effectiveConsistencyWeight = effectiveConsistencyWeight; }
-
-    public Integer getEffectiveMomentumWeight() { return effectiveMomentumWeight; }
-    public void setEffectiveMomentumWeight(Integer effectiveMomentumWeight) { this.effectiveMomentumWeight = effectiveMomentumWeight; }
-
-    public Integer getEffectiveProgressWeight() { return effectiveProgressWeight; }
-    public void setEffectiveProgressWeight(Integer effectiveProgressWeight) { this.effectiveProgressWeight = effectiveProgressWeight; }
-
     public Integer getConsistencyWeight() { return consistencyWeight; }
     public void setConsistencyWeight(Integer consistencyWeight) { this.consistencyWeight = consistencyWeight; }
 
@@ -188,6 +170,9 @@ public class GoalResponse {
 
     public Double getMomentumScore() { return momentumScore; }
     public void setMomentumScore(Double momentumScore) { this.momentumScore = momentumScore; }
+
+    public Double getProgressScore() { return progressScore; }
+    public void setProgressScore(Double progressScore) { this.progressScore = progressScore; }
 
     public Double getHealthScore() { return healthScore; }
     public void setHealthScore(Double healthScore) { this.healthScore = healthScore; }
@@ -204,9 +189,4 @@ public class GoalResponse {
     public ParentInsights getParentInsights() { return parentInsights; }
     public void setParentInsights(ParentInsights parentInsights) { this.parentInsights = parentInsights; }
 
-    public String getScheduleDays() { return scheduleDays; }
-    public void setScheduleDays(String scheduleDays) { this.scheduleDays = scheduleDays; }
-
-    public List<com.sagarpandey.activity_tracker.enums.ScheduleDay> getScheduleDaysList() { return scheduleDaysList; }
-    public void setScheduleDaysList(List<com.sagarpandey.activity_tracker.enums.ScheduleDay> scheduleDaysList) { this.scheduleDaysList = scheduleDaysList; }
 }
