@@ -202,7 +202,7 @@ public class Goal {
     // --- Streak Tracking ---
     @Column(name = "current_streak")
     private Integer currentStreak;
-    // Consecutive weeks where targetFrequencyWeekly was met
+    // Consecutive periods where the configured schedule/target was met
     // Reset to 0 if a week is missed beyond grace period
 
     @Column(name = "longest_streak")

@@ -16,7 +16,7 @@ public interface GoalPeriodService {
     
     /**
      * Create a new GoalPeriod for a Goal with intelligent field copying
-     * and period range calculation based on goal's schedule frequency
+     * and period range calculation based on goal's schedule type
      */
     GoalPeriod createPeriodForGoal(Goal goal);
     
@@ -55,7 +55,7 @@ public interface GoalPeriodService {
     // ============================================
     
     /**
-     * Calculate period start and end dates based on goal's schedule frequency
+     * Calculate period start and end dates based on goal's schedule type
      * and reference date (for subsequent periods)
      */
     PeriodRange calculatePeriodRange(Goal goal, LocalDate referenceDate);

@@ -4,10 +4,14 @@ import com.sagarpandey.activity_tracker.Exceptions.GoalNotFoundException;
 import com.sagarpandey.activity_tracker.Exceptions.ValidationException;
 import com.sagarpandey.activity_tracker.Mapper.GoalMapper;
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
+import com.sagarpandey.activity_tracker.Repository.GoalPeriodRepository;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalPeriodService;
 import com.sagarpandey.activity_tracker.dtos.GoalRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
 import com.sagarpandey.activity_tracker.dtos.GoalStatsResponse;
 import com.sagarpandey.activity_tracker.models.Goal;
+import com.sagarpandey.activity_tracker.models.GoalPeriod;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +34,15 @@ class GoalServiceV1Test {
 
     @Mock
     private GoalMapper goalMapper;
+
+    @Mock
+    private GoalHealthService goalHealthService;
+
+    @Mock
+    private GoalPeriodRepository goalPeriodRepository;
+
+    @Mock
+    private GoalPeriodService goalPeriodService;
 
     @InjectMocks
     private GoalServiceV1 goalService;
@@ -67,6 +80,7 @@ class GoalServiceV1Test {
         goal.setProgressPercentage(0.0);
         goal.setCreatedAt(LocalDateTime.now());
         goal.setLastUpdatedAt(LocalDateTime.now());
+        goal.setIsMilestone(false);
         goal.setIsDeleted(false);
 
         goalResponse = new GoalResponse();
@@ -89,6 +103,7 @@ class GoalServiceV1Test {
         // Given
         when(goalMapper.toEntity(goalRequest, userId)).thenReturn(goal);
         when(goalRepository.save(goal)).thenReturn(goal);
+        stubFirstPeriodCreation();
         when(goalMapper.toResponse(goal)).thenReturn(goalResponse);
 
         // When
@@ -154,6 +169,7 @@ class GoalServiceV1Test {
                 .thenReturn(Optional.of(parentGoal));
         when(goalMapper.toEntity(goalRequest, userId)).thenReturn(goal);
         when(goalRepository.save(goal)).thenReturn(goal);
+        stubFirstPeriodCreation();
         when(goalMapper.toResponse(goal)).thenReturn(goalResponse);
 
         // When
@@ -411,5 +427,11 @@ class GoalServiceV1Test {
         goal.setPriority(Goal.Priority.MEDIUM);
         goal.setIsMilestone(false);
         return goal;
+    }
+
+    private void stubFirstPeriodCreation() {
+        GoalPeriod period = new GoalPeriod();
+        when(goalPeriodService.createPeriodForGoal(goal)).thenReturn(period);
+        when(goalPeriodRepository.save(period)).thenReturn(period);
     }
 }

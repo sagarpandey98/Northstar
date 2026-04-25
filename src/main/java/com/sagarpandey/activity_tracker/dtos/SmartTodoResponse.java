@@ -23,7 +23,7 @@ public class SmartTodoResponse {
     
     // Schedule information
     private boolean scheduledForToday;
-    private String scheduleType; // DAILY, SPECIFIC_DAYS, WEEKLY, MONTHLY
+    private String scheduleType; // V2 schedule type or CONFIGURED/FLEXIBLE display value
     private String scheduleDetails; // "MON/WED/FRI", "5 problems/day", etc.
     
     // Progress tracking

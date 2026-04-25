@@ -1,82 +1,159 @@
 package com.sagarpandey.activity_tracker.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ScheduleSpec {
 
-    private String frequency;
-    private Boolean flexible;
+    public enum ScheduleType {
+        DAILY,
+        WEEKLY,
+        MONTHLY,
+        QUARTERLY,
+        YEARLY
+    }
+
+    public enum RuleScope {
+        QUARTER,
+        MONTH_OF_YEAR,
+        MONTH_OF_QUARTER,
+        WEEK_OF_MONTH,
+        DAY_OF_MONTH,
+        DAY_OF_WEEK,
+        TIME_OF_DAY,
+        TIME_WINDOW
+    }
+
+    public enum RuleMode {
+        STRICT,
+        FLEXIBLE
+    }
+
+    public enum WeekOfMonthModel {
+        DAY_BUCKETS,
+        CALENDAR_WEEKS
+    }
+
+    public enum ExclusionType {
+        DATE,
+        DATE_RANGE,
+        DAY_OF_WEEK,
+        MONTH_OF_YEAR
+    }
+
+    private Integer version = 2;
+    private ScheduleType scheduleType;
     private String timezone;
-    private Constraints constraints;
+    private String weekStartsOn = "MONDAY";
+    private WeekOfMonthModel weekOfMonthModel = WeekOfMonthModel.DAY_BUCKETS;
+    private Requirements requirements;
+    private List<Rule> rules;
     private List<Exclusion> exclusions;
-    private List<Segment> segments;
 
     public ScheduleSpec() {}
 
-    public String getFrequency() { return frequency; }
-    public void setFrequency(String frequency) { this.frequency = frequency; }
+    public Integer getVersion() { return version; }
+    public void setVersion(Integer version) { this.version = version; }
 
-    public Boolean getFlexible() { return flexible; }
-    public void setFlexible(Boolean flexible) { this.flexible = flexible; }
+    public ScheduleType getScheduleType() { return scheduleType; }
+    public void setScheduleType(ScheduleType scheduleType) { this.scheduleType = scheduleType; }
 
     public String getTimezone() { return timezone; }
     public void setTimezone(String timezone) { this.timezone = timezone; }
 
-    public Constraints getConstraints() { return constraints; }
-    public void setConstraints(Constraints constraints) { this.constraints = constraints; }
+    public String getWeekStartsOn() { return weekStartsOn; }
+    public void setWeekStartsOn(String weekStartsOn) { this.weekStartsOn = weekStartsOn; }
+
+    public WeekOfMonthModel getWeekOfMonthModel() { return weekOfMonthModel; }
+    public void setWeekOfMonthModel(WeekOfMonthModel weekOfMonthModel) { this.weekOfMonthModel = weekOfMonthModel; }
+
+    public Requirements getRequirements() { return requirements; }
+    public void setRequirements(Requirements requirements) { this.requirements = requirements; }
+
+    public List<Rule> getRules() { return rules; }
+    public void setRules(List<Rule> rules) { this.rules = rules; }
 
     public List<Exclusion> getExclusions() { return exclusions; }
     public void setExclusions(List<Exclusion> exclusions) { this.exclusions = exclusions; }
 
-    public List<Segment> getSegments() { return segments; }
-    public void setSegments(List<Segment> segments) { this.segments = segments; }
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Requirements {
+        private Integer minCheckins;
+        private Integer maxCheckins;
 
-    // Nested classes representing the JSON sub-structures
+        public Requirements() {}
 
-    public static class Constraints {
-        private Integer minCheckinsRequired;
-        private Integer maxCheckinsAllowed;
+        public Integer getMinCheckins() { return minCheckins; }
+        public void setMinCheckins(Integer minCheckins) { this.minCheckins = minCheckins; }
 
-        public Constraints() {}
-
-        public Integer getMinCheckinsRequired() { return minCheckinsRequired; }
-        public void setMinCheckinsRequired(Integer minCheckinsRequired) { this.minCheckinsRequired = minCheckinsRequired; }
-
-        public Integer getMaxCheckinsAllowed() { return maxCheckinsAllowed; }
-        public void setMaxCheckinsAllowed(Integer maxCheckinsAllowed) { this.maxCheckinsAllowed = maxCheckinsAllowed; }
+        public Integer getMaxCheckins() { return maxCheckins; }
+        public void setMaxCheckins(Integer maxCheckins) { this.maxCheckins = maxCheckins; }
     }
 
-    public static class Segment {
-        private String frequency;
-        private List<String> values;
-        private Boolean flexible;
-        private List<Segment> segments;
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Rule {
+        private RuleScope scope;
+        private List<Object> values;
+        private RuleMode mode;
+        private Requirements requirements;
+        private List<Rule> rules;
+        private List<TimeWindow> windows;
 
-        public Segment() {}
+        public Rule() {}
 
-        public String getFrequency() { return frequency; }
-        public void setFrequency(String frequency) { this.frequency = frequency; }
+        public RuleScope getScope() { return scope; }
+        public void setScope(RuleScope scope) { this.scope = scope; }
 
-        public List<String> getValues() { return values; }
-        public void setValues(List<String> values) { this.values = values; }
+        public List<Object> getValues() { return values; }
+        public void setValues(List<Object> values) { this.values = values; }
 
-        public Boolean getFlexible() { return flexible; }
-        public void setFlexible(Boolean flexible) { this.flexible = flexible; }
+        public RuleMode getMode() { return mode; }
+        public void setMode(RuleMode mode) { this.mode = mode; }
 
-        public List<Segment> getSegments() { return segments; }
-        public void setSegments(List<Segment> segments) { this.segments = segments; }
+        public Requirements getRequirements() { return requirements; }
+        public void setRequirements(Requirements requirements) { this.requirements = requirements; }
+
+        public List<Rule> getRules() { return rules; }
+        public void setRules(List<Rule> rules) { this.rules = rules; }
+
+        public List<TimeWindow> getWindows() { return windows; }
+        public void setWindows(List<TimeWindow> windows) { this.windows = windows; }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class TimeWindow {
+        private String start;
+        private String end;
+
+        public TimeWindow() {}
+
+        public String getStart() { return start; }
+        public void setStart(String start) { this.start = start; }
+
+        public String getEnd() { return end; }
+        public void setEnd(String end) { this.end = end; }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Exclusion {
-        private String type;
-        private String value;
+        private ExclusionType type;
+        private Object value;
+        private String start;
+        private String end;
 
         public Exclusion() {}
 
-        public String getType() { return type; }
-        public void setType(String type) { this.type = type; }
+        public ExclusionType getType() { return type; }
+        public void setType(ExclusionType type) { this.type = type; }
 
-        public String getValue() { return value; }
-        public void setValue(String value) { this.value = value; }
+        public Object getValue() { return value; }
+        public void setValue(Object value) { this.value = value; }
+
+        public String getStart() { return start; }
+        public void setStart(String start) { this.start = start; }
+
+        public String getEnd() { return end; }
+        public void setEnd(String end) { this.end = end; }
     }
 }

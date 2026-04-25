@@ -47,30 +47,40 @@ These fields entirely replace the old `scheduleDays` and `evaluationPeriod` logi
 
 | Field Name | Type | Required | Description |
 | :--- | :--- | :---: | :--- |
-| `scheduleSpec` | JSON Object | No | Replaces `scheduleDays` and `targetFrequencyWeekly`. Supports robust filtering (e.g., frequencies, exclusion days, maximum limits). See schema below. |
+| `scheduleSpec` | JSON Object | No | Replaces `scheduleDays` and `targetFrequencyWeekly`. Uses the V2 `scheduleType` + recursive `rules` contract. See schema below. |
 | `minimumSessionPeriod` | Integer | No | The absolute minimum minutes required over the period to be deemed "consistent". (e.g. 120 means at least 2 hours of gym/week). HeavILY factors into Consistency Score. |
 | `maximumSessionPeriod` | Integer | No | The ultimate time-limit target over the period (e.g. 300 minutes). Factors heavily into Progress Score limits. |
 | `allowDoubleLogging` | Boolean | No | Indicates whether this goal allows duplicate log entries on the same day. Default `true`. |
 | `missesAllowedPerPeriod`| Integer | No | Defines the "grace period" bounds (e.g., 2 free misses before the momentum breaks). |
 
 ### C) The `scheduleSpec` JSON Structure
-The `scheduleSpec` is a strictly typed JSON object sent as-is. It accommodates incredibly diverse requirements (e.g., "3 times a week, but not on weekends").
+The `scheduleSpec` is a strictly typed JSON object sent as-is. It supports simple schedules and detailed drill-down schedules.
 
 ```json
 {
-  "frequency": "WEEKLY",
-  "flexible": true,
+  "version": 2,
+  "scheduleType": "WEEKLY",
   "timezone": "UTC",
-  "constraints": {
-    "minCheckinsRequired": 3,
-    "maxCheckinsAllowed": 5
+  "weekStartsOn": "MONDAY",
+  "requirements": {
+    "minCheckins": 3,
+    "maxCheckins": 5
   },
+  "rules": [
+    {
+      "scope": "DAY_OF_WEEK",
+      "values": ["MONDAY", "WEDNESDAY", "FRIDAY"],
+      "mode": "STRICT"
+    }
+  ],
   "exclusions": [
     { "type": "DAY_OF_WEEK", "value": "SATURDAY" },
     { "type": "DAY_OF_WEEK", "value": "SUNDAY" }
   ]
 }
 ```
+
+For the full schema, drill-down rules, and examples such as yearly -> quarter -> month -> week -> day -> time, see `docs/schedule_spec_system_design.md`.
 
 ### D) Health Engine Weights
 The user can optionally pass custom health calculation weights. The Bounded Ledger strictly requires these three to sum up to exactly `100` if provided. If not provided, they fall back to the `GoalType` defaults automatically.
@@ -98,11 +108,19 @@ Instead of passing `targetFrequencyWeekly`, the frontend will now build the UI t
   "maximumSessionPeriod": 600,   
   
   "scheduleSpec": {
-     "frequency": "WEEKLY",
-     "flexible": true,
-     "constraints": {
-         "minCheckinsRequired": 4
-     }
+    "version": 2,
+    "scheduleType": "WEEKLY",
+    "timezone": "Asia/Kolkata",
+    "requirements": {
+      "minCheckins": 4
+    },
+    "rules": [
+      {
+        "scope": "DAY_OF_WEEK",
+        "values": ["MONDAY", "WEDNESDAY", "FRIDAY"],
+        "mode": "STRICT"
+      }
+    ]
   }
 }
 ```

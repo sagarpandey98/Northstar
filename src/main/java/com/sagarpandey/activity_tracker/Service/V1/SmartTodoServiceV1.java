@@ -7,23 +7,19 @@ import com.sagarpandey.activity_tracker.dtos.SmartTodoResponse;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
 import com.sagarpandey.activity_tracker.dtos.ActivityResponse;
 import com.sagarpandey.activity_tracker.enums.GoalType;
-import com.sagarpandey.activity_tracker.enums.ScheduleType;
-import com.sagarpandey.activity_tracker.enums.ScheduleDay;
 import com.sagarpandey.activity_tracker.Repository.GoalPeriodRepository;
 import com.sagarpandey.activity_tracker.models.GoalPeriod;
-import com.sagarpandey.activity_tracker.models.Goal;
+import com.sagarpandey.activity_tracker.models.ScheduleSpec;
 import com.sagarpandey.activity_tracker.utils.ScheduleSpecEvaluator;
 import java.time.OffsetDateTime;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.Comparator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -217,7 +213,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         
         // 3. Progress tracking (real data)
         int todayProgress = (int) countTodayActivities(goal.getId(), today, allActivities);
-        int todayTarget = calculateTodayTarget(goal);
+        int todayTarget = calculateTodayTarget(goal, today);
         
         todo.setCurrentProgress(todayProgress);
         todo.setTargetProgress(todayTarget);
@@ -360,34 +356,35 @@ public class SmartTodoServiceV1 implements SmartTodoService {
      * Determines if a goal is currently behind schedule
      * 
      * Behind schedule if:
-     * - Has targetFrequencyWeekly configured
-     * - Current week shows < 50% of expected progress
+     * - Has a schedule requirement configured
+     * - Current active period shows < 50% of expected check-in pace
      */
     private boolean isBehindSchedule(GoalResponse goal, LocalDate today,
                                      List<ActivityResponse> allActivities) {
-        // Note: Ledger DSL frequency tracking to be applied in Phase 4.
-        if (goal.getScheduleSpec() == null) {
+        Integer minCheckins = getMinCheckinsRequired(goal.getScheduleSpec());
+        if (minCheckins == null || minCheckins <= 0 || goal.getUuid() == null) {
             return false;
         }
-        
-        // Get current week Monday
-        LocalDate weekMonday = today.minusDays(today.getDayOfWeek().getValue() - 1);
-        
-        // Count activities for this week
-        long weekActivities = 0;
-        for (int i = 0; i < 7; i++) {
-            LocalDate dayInWeek = weekMonday.plusDays(i);
-            if (dayInWeek.isAfter(today)) break; // Don't count future days
-            
-            weekActivities += countTodayActivities(goal.getId(), dayInWeek, allActivities);
+
+        Optional<GoalPeriod> activePeriodOpt = goalPeriodRepository.findActivePeriodForGoal(goal.getUuid(), today);
+        if (activePeriodOpt.isEmpty()) {
+            return false;
         }
-        
-        // Calculate expected progress (days passed this week / 7 * arbitrary default frequency fallback 3)
-        int daysIntoWeek = today.getDayOfWeek().getValue();
-        double expectedProgress = (daysIntoWeek / 7.0) * 3;
-        
-        // Behind if less than 50% of expected
-        return weekActivities < (expectedProgress * 0.5);
+
+        GoalPeriod period = activePeriodOpt.get();
+        int totalActionableDays = ScheduleSpecEvaluator.countActionableDays(
+            period.getPeriodStart(), period.getPeriodEnd(), goal.getScheduleSpec()
+        );
+        int elapsedActionableDays = ScheduleSpecEvaluator.countActionableDays(
+            period.getPeriodStart(), today, goal.getScheduleSpec()
+        );
+        if (totalActionableDays <= 0 || elapsedActionableDays <= 0) {
+            return false;
+        }
+
+        long actualCheckins = countActivitiesBetween(goal.getId(), period.getPeriodStart(), today, allActivities);
+        double expectedByToday = minCheckins * (elapsedActionableDays / (double) totalActionableDays);
+        return actualCheckins < (expectedByToday * 0.5);
     }
     
     /**
@@ -494,23 +491,51 @@ public class SmartTodoServiceV1 implements SmartTodoService {
 /**
  * Calculates the target progress count for today based on goal configuration
  * 
- * FLEXIBLE goals: targetFrequencyWeekly / 7 (spread evenly)
- * SPECIFIC_DAYS goals: 1 (if today is scheduled), 0 (if not)
+ * Configured schedules default to one check-in per actionable day.
  */
-private int calculateTodayTarget(GoalResponse goal) {
-    if (goal.getScheduleSpec() != null) {
-        // For configured schedules, target is 1 if scheduled, 0 if not
-        // (already filtered to only scheduled days, so always 1)
+private int calculateTodayTarget(GoalResponse goal, LocalDate today) {
+    ScheduleSpec spec = goal.getScheduleSpec();
+    Integer minCheckins = getMinCheckinsRequired(spec);
+    if (minCheckins == null || minCheckins <= 0 || goal.getUuid() == null) {
         return 1;
     }
-    
-    // Note: Stubbed for Phase 4 rule engine evaluation. 
-    if (goal.getScheduleSpec() != null) {
+
+    Optional<GoalPeriod> activePeriodOpt = goalPeriodRepository.findActivePeriodForGoal(goal.getUuid(), today);
+    if (activePeriodOpt.isEmpty()) {
         return 1;
     }
-    
-    // Default target if nothing configured
-    return 1;
+
+    GoalPeriod period = activePeriodOpt.get();
+    int actionableDays = ScheduleSpecEvaluator.countActionableDays(period.getPeriodStart(), period.getPeriodEnd(), spec);
+    if (actionableDays <= 0) {
+        return 1;
+    }
+
+    return Math.max(1, (int) Math.ceil(minCheckins / (double) actionableDays));
+}
+
+private Integer getMinCheckinsRequired(ScheduleSpec spec) {
+    if (spec == null || spec.getRequirements() == null) {
+        return null;
+    }
+    return spec.getRequirements().getMinCheckins();
+}
+
+private long countActivitiesBetween(Long goalId, LocalDate start, LocalDate end, List<ActivityResponse> allActivities) {
+    if (goalId == null || start == null || end == null || allActivities == null) {
+        return 0;
+    }
+    if (end.isBefore(start)) {
+        return 0;
+    }
+
+    long count = 0;
+    LocalDate current = start;
+    while (!current.isAfter(end)) {
+        count += countTodayActivities(goalId, current, allActivities);
+        current = current.plusDays(1);
+    }
+    return count;
 }
 
 /**
@@ -526,10 +551,6 @@ private Integer calculateSuggestedTime(GoalResponse goal, LocalDate today) {
 
     if (activePeriodOpt.isPresent()) {
         GoalPeriod period = activePeriodOpt.get();
-        
-        // Use the actual period start date for calculations instead of today's date
-        LocalDate periodStart = period.getPeriodStart();
-        System.out.println("DEBUG: Using period start date " + periodStart + " instead of today " + today + " for calculations");
         
         // If the goal has an explicit time commitment, honor it regardless of metric
         Integer periodMin = period.getMinimumSessionPeriod();
@@ -547,9 +568,8 @@ private Integer calculateSuggestedTime(GoalResponse goal, LocalDate today) {
                             ? period.getCurrentValue() : 0.0;
             double remaining = Math.max(0, periodMin - spent);
             
-            // Calculate remaining actionable days in this period using period start date
             int remainingDays = ScheduleSpecEvaluator.countActionableDays(
-                periodStart, period.getPeriodEnd(), goal.getScheduleSpec()
+                today, period.getPeriodEnd(), goal.getScheduleSpec()
             );
             
             if (remainingDays > 0) {

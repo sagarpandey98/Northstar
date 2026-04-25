@@ -1,6 +1,8 @@
 package com.sagarpandey.activity_tracker.controllers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalPeriodService;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalService;
 import com.sagarpandey.activity_tracker.dtos.GoalRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
@@ -43,6 +45,12 @@ class GoalControllerTest {
 
     @MockBean
     private GoalService goalService;
+
+    @MockBean
+    private GoalHealthService goalHealthService;
+
+    @MockBean
+    private GoalPeriodService goalPeriodService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -95,7 +103,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(post("/api/v1/goals")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId)))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(goalRequest)))
                 .andExpect(status().isCreated())
@@ -115,7 +123,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(post("/api/v1/goals")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId)))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(goalRequest)))
                 .andExpect(status().isBadRequest());
@@ -132,7 +140,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(get("/api/v1/goals")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Goals retrieved successfully"))
@@ -152,7 +160,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(get("/api/v1/goals/{id}", goalId)
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Goal retrieved successfully"))
@@ -175,7 +183,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(put("/api/v1/goals/{id}", goalId)
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId)))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(goalRequest)))
                 .andExpect(status().isOk())
@@ -195,7 +203,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(delete("/api/v1/goals/{id}", goalId)
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Goal deleted successfully"))
@@ -213,7 +221,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(get("/api/v1/goals/tree")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Goal tree retrieved successfully"))
@@ -234,7 +242,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(patch("/api/v1/goals/progress/bulk")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId)))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(progressUpdates)))
                 .andExpect(status().isOk())
@@ -257,7 +265,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(patch("/api/v1/goals/status/bulk")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId)))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(statusUpdates)))
                 .andExpect(status().isOk())
@@ -281,7 +289,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(get("/api/v1/goals/statistics")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Statistics retrieved successfully"))
@@ -301,7 +309,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(get("/api/v1/goals/overdue")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Overdue goals retrieved successfully"))
@@ -319,7 +327,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(get("/api/v1/goals/due-soon")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Due soon goals retrieved successfully"))
@@ -339,7 +347,7 @@ class GoalControllerTest {
         // When & Then
         mockMvc.perform(get("/api/v1/goals/search")
                         .param("query", searchQuery)
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Search completed successfully"))
@@ -357,7 +365,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(get("/api/v1/goals/milestones")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Milestones retrieved successfully"))
@@ -378,7 +386,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(patch("/api/v1/goals/{id}/progress", goalId)
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId)))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(progressData)))
                 .andExpect(status().isOk())
@@ -397,7 +405,7 @@ class GoalControllerTest {
 
         // When & Then
         mockMvc.perform(post("/api/v1/goals/recalculate")
-                        .with(jwt().jwt(jwt -> jwt.claim("sub", userId))))
+                        .with(jwt().jwt(jwt -> jwt.claim("id", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.message").value("Progress recalculated successfully"))

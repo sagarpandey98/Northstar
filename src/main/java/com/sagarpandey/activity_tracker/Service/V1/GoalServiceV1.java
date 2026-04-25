@@ -13,6 +13,7 @@ import com.sagarpandey.activity_tracker.dtos.GoalResponse;
 import com.sagarpandey.activity_tracker.dtos.GoalStatsResponse;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
 import com.sagarpandey.activity_tracker.models.Goal;
+import com.sagarpandey.activity_tracker.utils.ScheduleSpecEvaluator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -419,6 +420,10 @@ public class GoalServiceV1 implements GoalService {
 
         // === NEW TIME BOUND LEDGER VALIDATIONS ===
         if (request.getScheduleSpec() != null) {
+            List<String> scheduleErrors = ScheduleSpecEvaluator.validate(request.getScheduleSpec());
+            if (!scheduleErrors.isEmpty()) {
+                throw new ValidationException(String.join("; ", scheduleErrors));
+            }
             if (request.getMinimumSessionPeriod() == null || request.getMinimumSessionPeriod() <= 0) {
                 throw new ValidationException("minimumSessionPeriod is strongly recommended when tracking consistency");
             }
