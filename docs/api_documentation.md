@@ -124,3 +124,73 @@ Instead of passing `targetFrequencyWeekly`, the frontend will now build the UI t
   }
 }
 ```
+
+## 5. Smart Todo API
+
+Smart Todo V1.1 now returns a wrapper object instead of a bare array.
+
+### Endpoints
+
+- `GET /api/v1/todos/today`
+- `GET /api/v1/todos/date?date=YYYY-MM-DD`
+- `POST /api/v1/todos/refresh`
+
+### Response Shape
+
+```json
+{
+  "date": "2026-04-25",
+  "timezone": "Asia/Kolkata",
+  "listType": "TODAY",
+  "summary": {
+    "totalItems": 4,
+    "mustDoTodayCount": 1,
+    "catchUpTodayCount": 1,
+    "goodToDoTodayCount": 1,
+    "completedTodayCount": 1,
+    "recommendedFocusGoalIds": [12, 19, 31],
+    "recommendedFocusTitles": ["Run", "Read", "Spanish"]
+  },
+  "items": [
+    {
+      "goalId": 12,
+      "title": "Morning Run",
+      "priorityDisplay": "P1",
+      "todoStatus": "MUST_DO_TODAY",
+      "scheduledForToday": true,
+      "scheduleType": "WEEKLY",
+      "scheduleLabel": "WEEKLY • FRI • 3 check-ins / period",
+      "currentProgress": 0,
+      "targetProgress": 1,
+      "remainingTodayTarget": 1,
+      "progressUnit": "check-ins",
+      "progressDisplay": "0 / 1 check-ins",
+      "periodCurrentProgress": 1,
+      "periodTargetProgress": 3,
+      "expectedProgressByToday": 2,
+      "paceRatio": 0.5,
+      "reasonCodes": ["SCHEDULED_TODAY"],
+      "reasonMessages": ["Scheduled for this date via FRI"],
+      "recommendedAction": "Log 1 more check-in.",
+      "suggestedTimeMinutes": 40,
+      "recommendedFocus": true,
+      "displayRank": 1
+    }
+  ]
+}
+```
+
+### Item Buckets
+
+- `MUST_DO_TODAY`
+- `CATCH_UP_TODAY`
+- `GOOD_TO_DO_TODAY`
+- `COMPLETED_TODAY`
+
+### Notes for Frontend
+
+- `summary` should drive header counters and focus chips.
+- `items` should be rendered grouped by `todoStatus`.
+- For `/date`, fields that mention `today` should be interpreted as referring to the selected date.
+
+For the deeper integration guide, see `docs/smart_todo_frontend_guide.md`.

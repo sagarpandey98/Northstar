@@ -13,6 +13,8 @@ public interface GoalPeriodRepository extends JpaRepository<GoalPeriod, Long> {
     // Fetch all periods tied to a specific Master Goal
     List<GoalPeriod> findByParentGoalUuid(String parentGoalUuid);
 
+    List<GoalPeriod> findByParentGoalUuidIn(List<String> parentGoalUuids);
+
     // Fetch a specific period by its strict UUID
     Optional<GoalPeriod> findByUuid(String uuid);
 

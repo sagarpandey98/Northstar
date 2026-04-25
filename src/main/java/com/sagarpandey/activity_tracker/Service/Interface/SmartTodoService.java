@@ -1,8 +1,6 @@
 package com.sagarpandey.activity_tracker.Service.Interface;
 
-import com.sagarpandey.activity_tracker.dtos.SmartTodoResponse;
-
-import java.util.List;
+import com.sagarpandey.activity_tracker.dtos.SmartTodoListResponse;
 
 /**
  * Smart Todo Service Interface
@@ -15,7 +13,7 @@ public interface SmartTodoService {
      * Get today's smart todo list
      * Returns intelligent daily tasks based on schedule, priority, and progress
      */
-    List<SmartTodoResponse> getTodaySmartTodos(String userId);
+    SmartTodoListResponse getTodaySmartTodos(String userId);
     
     /**
      * Refresh today's todo list
@@ -24,7 +22,7 @@ public interface SmartTodoService {
      * @param userId user ID
      * @return refreshed todo list
      */
-    List<SmartTodoResponse> refreshTodayTodos(String userId);
+    SmartTodoListResponse refreshTodayTodos(String userId);
     
     /**
      * Get smart todo list for a specific date
@@ -34,5 +32,5 @@ public interface SmartTodoService {
      * @param date target date for todo calculation
      * @return todo list for specified date
      */
-    List<SmartTodoResponse> getSmartTodosForDate(String userId, java.time.LocalDate date);
+    SmartTodoListResponse getSmartTodosForDate(String userId, java.time.LocalDate date);
 }

@@ -7,6 +7,7 @@ import com.sagarpandey.activity_tracker.Repository.ActivityRepository;
 import com.sagarpandey.activity_tracker.Repository.ActivitySpecifications;
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
 import com.sagarpandey.activity_tracker.Service.Interface.ActivityServiceInterface;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalPeriodService;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
 import com.sagarpandey.activity_tracker.dtos.ActivityRequest;
 import com.sagarpandey.activity_tracker.dtos.ActivityResponse;
@@ -31,7 +32,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,13 +50,19 @@ public class ActivityServiceV1 implements ActivityServiceInterface {
     private final ActivityRepository activityRepository;
     private final ActivityMapper activityMapper;
     private final GoalRepository goalRepository;
+    private final GoalPeriodService goalPeriodService;
     @Autowired
     private GoalHealthService goalHealthService;
 
-    public ActivityServiceV1(ActivityRepository activityRepository, ActivityMapper activityMapper, GoalRepository goalRepository) {
+    public ActivityServiceV1(
+            ActivityRepository activityRepository,
+            ActivityMapper activityMapper,
+            GoalRepository goalRepository,
+            GoalPeriodService goalPeriodService) {
         this.activityRepository = activityRepository;
         this.activityMapper = activityMapper;
         this.goalRepository = goalRepository;
+        this.goalPeriodService = goalPeriodService;
     }
     
     @Autowired
@@ -154,6 +163,7 @@ public class ActivityServiceV1 implements ActivityServiceInterface {
                         "Goal not found with id: " + request.getData().getGoalId() + " for current user"
                     );
                 }
+                ensurePeriodExistsForActivityDate(request.getData(), userId);
             }
             // Convert DTO to entity using mapper
             Activity activity = activityMapper.toEntity(request);
@@ -311,5 +321,39 @@ public class ActivityServiceV1 implements ActivityServiceInterface {
         
         response.setPagination(paginationInfo);
         return response;
+    }
+    
+    private void ensurePeriodExistsForActivityDate(ActivityRequest.DataPayload data, String userId) {
+        if (data == null || data.getGoalId() == null || data.getStartTime() == null) {
+            return;
+        }
+        
+        Optional<Goal> goalOpt = goalRepository.findByIdAndUserIdAndIsDeletedFalse(data.getGoalId(), userId);
+        if (goalOpt.isEmpty()) {
+            return;
+        }
+        
+        Goal goal = goalOpt.get();
+        LocalDate activityDate = data.getStartTime()
+            .atZoneSameInstant(resolveGoalZone(goal))
+            .toLocalDate();
+        
+        if (goalPeriodService.getActivePeriodForGoal(goal.getUuid(), activityDate).isPresent()) {
+            return;
+        }
+        
+        GoalPeriodService.PeriodRange range = goalPeriodService.calculatePeriodRange(goal, activityDate);
+        goalPeriodService.createPeriodForGoal(goal, range.getPeriodStart(), range.getPeriodEnd());
+    }
+    
+    private ZoneId resolveGoalZone(Goal goal) {
+        if (goal != null && goal.getScheduleSpec() != null && goal.getScheduleSpec().getTimezone() != null) {
+            try {
+                return ZoneId.of(goal.getScheduleSpec().getTimezone());
+            } catch (Exception ignored) {
+                // Fall back to UTC when timezone is malformed.
+            }
+        }
+        return ZoneOffset.UTC;
     }
 }

@@ -1,7 +1,7 @@
 package com.sagarpandey.activity_tracker.controllers;
 
 import com.sagarpandey.activity_tracker.Service.Interface.SmartTodoService;
-import com.sagarpandey.activity_tracker.dtos.SmartTodoResponse;
+import com.sagarpandey.activity_tracker.dtos.SmartTodoListResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -10,8 +10,6 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.List;
-
 /**
  * Todo Controller for Smart Todo List functionality
  * Provides intelligent daily task management instead of direct priority exposure
@@ -44,11 +42,11 @@ public class TodoController {
      * Returns intelligent daily tasks based on schedule, priority, and progress
      */
     @GetMapping("/today")
-    public ResponseEntity<List<SmartTodoResponse>> getTodaySmartTodos(
+    public ResponseEntity<SmartTodoListResponse> getTodaySmartTodos(
             Authentication authentication) {
         
         String userId = extractUserIdFromJwt(authentication);
-        List<SmartTodoResponse> smartTodos = smartTodoService.getTodaySmartTodos(userId);
+        SmartTodoListResponse smartTodos = smartTodoService.getTodaySmartTodos(userId);
         return ResponseEntity.ok(smartTodos);
     }
     
@@ -58,12 +56,12 @@ public class TodoController {
      * Example: /api/v1/todos/date?date=2026-04-25
      */
     @GetMapping("/date")
-    public ResponseEntity<List<SmartTodoResponse>> getSmartTodosForDate(
+    public ResponseEntity<SmartTodoListResponse> getSmartTodosForDate(
             Authentication authentication,
             @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         
         String userId = extractUserIdFromJwt(authentication);
-        List<SmartTodoResponse> smartTodos = smartTodoService.getSmartTodosForDate(userId, date);
+        SmartTodoListResponse smartTodos = smartTodoService.getSmartTodosForDate(userId, date);
         return ResponseEntity.ok(smartTodos);
     }
     
@@ -73,11 +71,11 @@ public class TodoController {
      * Recalculates priorities based on new activities
      */
     @PostMapping("/refresh")
-    public ResponseEntity<List<SmartTodoResponse>> refreshTodayTodos(
+    public ResponseEntity<SmartTodoListResponse> refreshTodayTodos(
             Authentication authentication) {
         
         String userId = extractUserIdFromJwt(authentication);
-        List<SmartTodoResponse> refreshedTodos = smartTodoService.refreshTodayTodos(userId);
+        SmartTodoListResponse refreshedTodos = smartTodoService.refreshTodayTodos(userId);
         return ResponseEntity.ok(refreshedTodos);
     }
 }
