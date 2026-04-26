@@ -109,17 +109,20 @@ public class SmartTodoServiceV1 implements SmartTodoService {
                 if (!isTrackableGoal(goal)) {
                     continue;
                 }
+                List<GoalPeriod> goalPeriods = periodsByGoalUuid.getOrDefault(goal.getUuid(), Collections.emptyList());
+                GoalPeriod activePeriod = resolvePeriodForDate(goal, goalPeriods, targetDate);
+                ScheduleSpec effectiveSpec = effectiveScheduleSpec(goal, activePeriod);
 
                 SmartTodoResponse todo = buildTodoItem(
                     goal,
-                    periodsByGoalUuid.getOrDefault(goal.getUuid(), Collections.emptyList()),
+                    goalPeriods,
                     activitiesByGoalId.getOrDefault(goal.getId(), Collections.emptyList()),
                     targetDate,
                     todayInUserZone,
                     userZone
                 );
 
-                if (todo != null && shouldIncludeTodo(todo, hasExplicitSchedule(goal.getScheduleSpec()))) {
+                if (todo != null && shouldIncludeTodo(todo, hasExplicitSchedule(effectiveSpec))) {
                     items.add(todo);
                 }
             }
@@ -149,14 +152,15 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             LocalDate actualToday,
             ZoneId userZone) {
         boolean futureDateView = targetDate.isAfter(actualToday);
-        ScheduleSpec spec = goal.getScheduleSpec();
         GoalPeriod activePeriod = resolvePeriodForDate(goal, goalPeriods, targetDate);
         if (activePeriod == null) {
             return null;
         }
+        ScheduleSpec spec = effectiveScheduleSpec(goal, activePeriod);
 
         boolean explicitSchedule = hasExplicitSchedule(spec);
         boolean scheduledForToday = isScheduledForDate(spec, targetDate);
+        boolean mustHappenToday = isHardScheduledForDate(spec, scheduledForToday);
         boolean periodStartsToday = activePeriod != null && targetDate.equals(activePeriod.getPeriodStart());
         LocalDate referenceDate = futureDateView ? actualToday : targetDate;
 
@@ -190,7 +194,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             ? ScheduleSpecEvaluator.countActionableDays(targetDate, activePeriod.getPeriodEnd(), spec)
             : 0;
 
-        int periodTargetProgress = toWholeNumber(resolvePeriodTargetValue(goal, activePeriod, totalActionableDays));
+        int periodTargetProgress = toWholeNumber(resolvePeriodTargetValue(goal, activePeriod, totalActionableDays, spec));
         int expectedByReferenceDate = (activePeriod != null && totalActionableDays > 0 && periodTargetProgress > 0)
             ? (int) Math.floor(periodTargetProgress * (elapsedActionableDays / (double) totalActionableDays))
             : 0;
@@ -206,9 +210,8 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         int baseTodayTarget = calculateBaseTodayTarget(
             goal,
             activePeriod,
-            targetDate,
-            actualToday,
             periodTargetProgress,
+            periodDurationProgressMinutes,
             remainingActionableDays
         );
         int catchUpTarget = futureDateView ? 0 : Math.max(0, expectedByTargetDate - progressBeforeTargetDate);
@@ -226,12 +229,11 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             ? periodCurrentProgress / (double) expectedByReferenceDate
             : 1.0;
 
-        boolean streakAtRisk = !futureDateView && isStreakAtRisk(goal, targetDate, goalActivities, userZone);
+        boolean streakAtRisk = !futureDateView && isStreakAtRisk(spec, goal, targetDate, goalActivities, userZone);
+        Integer baselineDailyTimeCommitment = calculateBaselineDailyTimeCommitment(goal, activePeriod, totalActionableDays);
         int suggestedTimeMinutes = calculateSuggestedTime(
             goal,
             activePeriod,
-            targetDate,
-            periodCurrentProgress,
             periodDurationProgressMinutes,
             remainingActionableDays,
             todayTarget
@@ -240,7 +242,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         List<String> reasonCodes = new ArrayList<>();
         List<String> reasonMessages = new ArrayList<>();
 
-        if (explicitSchedule && scheduledForToday) {
+        if (mustHappenToday) {
             addReason(
                 reasonCodes,
                 reasonMessages,
@@ -310,7 +312,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             );
         }
 
-        String todoStatus = determineTodoStatus(explicitSchedule, scheduledForToday, streakAtRisk, behindSchedule, completedToday);
+        String todoStatus = determineTodoStatus(mustHappenToday, streakAtRisk, behindSchedule, completedToday);
         double urgencyScore = calculateUrgencyScore(goal, todoStatus, streakAtRisk, behindSchedule, daysUntilTargetDate, goal.getHealthScore(), todayProgress);
         List<SmartTodoResponse.ScoreComponent> scoreBreakdown = buildScoreBreakdown(
             goal,
@@ -343,12 +345,8 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         todo.setStreakAtRisk(streakAtRisk);
         todo.setBehindSchedule(behindSchedule);
         todo.setUrgencyReason(reasonMessages.get(0));
-        todo.setMinimumSessionPeriod(activePeriod != null && activePeriod.getMinimumSessionPeriod() != null
-            ? activePeriod.getMinimumSessionPeriod()
-            : goal.getMinimumSessionPeriod());
-        todo.setMinimumSessionDaily(activePeriod != null && activePeriod.getMinimumSessionDaily() != null
-            ? Integer.valueOf((int) Math.ceil(activePeriod.getMinimumSessionDaily()))
-            : goal.getMinimumTimeCommittedDaily());
+        todo.setMinimumSessionPeriod(resolvePeriodTimeCommitment(goal, activePeriod));
+        todo.setMinimumSessionDaily(baselineDailyTimeCommitment);
         todo.setSuggestedTimeMinutes(suggestedTimeMinutes);
         todo.setLastCompletedDate(getLastActivityDate(goalActivities, userZone));
         todo.setRequiresQuickLog(!completedToday);
@@ -404,13 +402,16 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         if (todo.getCurrentProgress() != null && todo.getCurrentProgress() > 0) {
             return true;
         }
-        if (todo.isPeriodStartsToday() || todo.isStreakAtRisk() || todo.isBehindSchedule()) {
+        if (todo.isScheduledForToday()) {
+            return true;
+        }
+        if (todo.isPeriodStartsToday()) {
             return true;
         }
         if (explicitSchedule) {
-            return todo.isScheduledForToday();
+            return false;
         }
-        return true;
+        return todo.isStreakAtRisk() || todo.isBehindSchedule();
     }
 
     private List<SmartTodoResponse> sortSmartTodos(List<SmartTodoResponse> todos) {
@@ -473,16 +474,18 @@ public class SmartTodoServiceV1 implements SmartTodoService {
     private int calculateBaseTodayTarget(
             GoalResponse goal,
             GoalPeriod activePeriod,
-            LocalDate targetDate,
-            LocalDate actualToday,
             int periodTargetProgress,
+            int periodDurationProgressMinutes,
             int remainingActionableDays) {
         if (goal.getMetric() == Goal.Metric.DURATION) {
-            if (activePeriod != null && activePeriod.getMinimumSessionDaily() != null && activePeriod.getMinimumSessionDaily() > 0) {
-                return (int) Math.ceil(activePeriod.getMinimumSessionDaily());
-            }
-            if (goal.getMinimumTimeCommittedDaily() != null && goal.getMinimumTimeCommittedDaily() > 0) {
-                return goal.getMinimumTimeCommittedDaily();
+            Integer dailyCommitment = calculateTodayTimeCommitment(
+                goal,
+                activePeriod,
+                periodDurationProgressMinutes,
+                remainingActionableDays
+            );
+            if (dailyCommitment != null && dailyCommitment > 0) {
+                return dailyCommitment;
             }
         }
 
@@ -498,6 +501,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
     }
 
     private boolean isStreakAtRisk(
+            ScheduleSpec spec,
             GoalResponse goal,
             LocalDate targetDate,
             List<ActivityResponse> goalActivities,
@@ -506,7 +510,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             return false;
         }
         LocalDate yesterday = targetDate.minusDays(1);
-        if (!isScheduledForDate(goal.getScheduleSpec(), yesterday)) {
+        if (!isScheduledForDate(spec, yesterday)) {
             return false;
         }
         return countCheckinsOnDate(goalActivities, yesterday, userZone) == 0;
@@ -628,29 +632,19 @@ public class SmartTodoServiceV1 implements SmartTodoService {
     private int calculateSuggestedTime(
             GoalResponse goal,
             GoalPeriod activePeriod,
-            LocalDate targetDate,
-            int periodCurrentProgress,
             int periodDurationProgressMinutes,
             int remainingActionableDays,
             int todayTarget) {
-        if (goal.getMinimumTimeCommittedDaily() != null && goal.getMinimumTimeCommittedDaily() > 0) {
-            return goal.getMinimumTimeCommittedDaily();
-        }
-
-        Integer periodCommitment = firstPositiveInteger(
-            activePeriod != null ? activePeriod.getMinimumSessionPeriod() : null,
-            goal.getMinimumTimeCommittedPeriod(),
-            goal.getMinimumSessionPeriod()
+        Integer commitmentBasedTime = calculateTodayTimeCommitment(
+            goal,
+            activePeriod,
+            periodDurationProgressMinutes,
+            remainingActionableDays
         );
-        if (periodCommitment != null && periodCommitment > 0) {
-            int remainingCommitment = Math.max(0, periodCommitment - Math.max(0, periodDurationProgressMinutes));
-            int actionableDays = Math.max(1, remainingActionableDays);
-            int commitmentPerDay = (int) Math.ceil(remainingCommitment / (double) actionableDays);
-            commitmentPerDay = Math.max(1, commitmentPerDay);
-            if (goal.getMetric() == Goal.Metric.DURATION && todayTarget > 0) {
-                return Math.max(todayTarget, commitmentPerDay);
-            }
-            return commitmentPerDay;
+        if (commitmentBasedTime != null && commitmentBasedTime > 0) {
+            return goal.getMetric() == Goal.Metric.DURATION && todayTarget > 0
+                ? Math.max(todayTarget, commitmentBasedTime)
+                : commitmentBasedTime;
         }
 
         if (goal.getMetric() == Goal.Metric.DURATION && todayTarget > 0) {
@@ -666,19 +660,68 @@ public class SmartTodoServiceV1 implements SmartTodoService {
                 ? activePeriod.getMinimumSessionPeriod()
                 : goal.getMinimumSessionPeriod();
             if (periodMinimum != null && periodMinimum > 0) {
-                int remaining = Math.max(0, periodMinimum - periodCurrentProgress);
                 if (remainingActionableDays > 0) {
-                    return Math.max(1, (int) Math.ceil(remaining / (double) remainingActionableDays));
+                    return Math.max(1, (int) Math.ceil(periodMinimum / (double) remainingActionableDays));
                 }
                 return periodMinimum;
             }
         }
 
-        if (goal.getMinimumTimeCommittedDaily() != null && goal.getMinimumTimeCommittedDaily() > 0) {
-            return goal.getMinimumTimeCommittedDaily();
+        Integer dailyFloor = resolveDailyTimeFloor(goal, activePeriod);
+        if (dailyFloor != null && dailyFloor > 0) {
+            return dailyFloor;
         }
 
         return calculateDefaultSuggestedTime(goal);
+    }
+
+    private Integer calculateBaselineDailyTimeCommitment(
+            GoalResponse goal,
+            GoalPeriod activePeriod,
+            int totalActionableDays) {
+        Integer periodCommitment = resolvePeriodTimeCommitment(goal, activePeriod);
+        if (periodCommitment != null && periodCommitment > 0 && totalActionableDays > 0) {
+            return Math.max(1, (int) Math.ceil(periodCommitment / (double) totalActionableDays));
+        }
+        return resolveDailyTimeFloor(goal, activePeriod);
+    }
+
+    private Integer calculateTodayTimeCommitment(
+            GoalResponse goal,
+            GoalPeriod activePeriod,
+            int periodDurationProgressMinutes,
+            int remainingActionableDays) {
+        Integer dailyFloor = resolveDailyTimeFloor(goal, activePeriod);
+        Integer periodCommitment = resolvePeriodTimeCommitment(goal, activePeriod);
+        if (periodCommitment != null && periodCommitment > 0) {
+            int remainingCommitment = Math.max(0, periodCommitment - Math.max(0, periodDurationProgressMinutes));
+            int actionableDays = Math.max(1, remainingActionableDays);
+            int commitmentPerDay = remainingCommitment > 0
+                ? Math.max(1, (int) Math.ceil(remainingCommitment / (double) actionableDays))
+                : 0;
+            if (dailyFloor != null && dailyFloor > 0) {
+                return commitmentPerDay > 0 ? Math.max(commitmentPerDay, dailyFloor) : dailyFloor;
+            }
+            return commitmentPerDay > 0 ? commitmentPerDay : null;
+        }
+        return dailyFloor;
+    }
+
+    private Integer resolvePeriodTimeCommitment(GoalResponse goal, GoalPeriod activePeriod) {
+        return firstPositiveInteger(
+            goal != null ? goal.getMinimumTimeCommittedPeriod() : null,
+            activePeriod != null ? activePeriod.getMinimumSessionPeriod() : null,
+            goal != null ? goal.getMinimumSessionPeriod() : null
+        );
+    }
+
+    private Integer resolveDailyTimeFloor(GoalResponse goal, GoalPeriod activePeriod) {
+        return firstPositiveInteger(
+            activePeriod != null && activePeriod.getMinimumSessionDaily() != null
+                ? Integer.valueOf((int) Math.ceil(activePeriod.getMinimumSessionDaily()))
+                : null,
+            goal != null ? goal.getMinimumTimeCommittedDaily() : null
+        );
     }
 
     private Integer firstPositiveInteger(Integer... values) {
@@ -705,7 +748,11 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         return suggestedTime;
     }
 
-    private double resolvePeriodTargetValue(GoalResponse goal, GoalPeriod activePeriod, int totalActionableDays) {
+    private double resolvePeriodTargetValue(
+            GoalResponse goal,
+            GoalPeriod activePeriod,
+            int totalActionableDays,
+            ScheduleSpec spec) {
         if (goal.getMetric() == Goal.Metric.DURATION) {
             return firstPositive(
                 activePeriod != null ? toDouble(activePeriod.getMinimumSessionPeriod()) : null,
@@ -719,7 +766,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             return firstPositive(goal.getTargetValue(), activePeriod != null ? activePeriod.getCurrentValue() : null, 1.0);
         }
 
-        Integer minCheckins = getMinCheckinsRequired(goal.getScheduleSpec());
+        Integer minCheckins = getMinCheckinsRequired(spec);
         if (minCheckins != null && minCheckins > 0) {
             return minCheckins;
         }
@@ -740,8 +787,25 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         return spec != null && spec.getRules() != null && !spec.getRules().isEmpty();
     }
 
+    private boolean isHardScheduledForDate(ScheduleSpec spec, boolean scheduledForDate) {
+        if (spec == null || !scheduledForDate) {
+            return false;
+        }
+        if (spec.getScheduleType() == ScheduleSpec.ScheduleType.DAILY) {
+            return true;
+        }
+        return hasExplicitSchedule(spec);
+    }
+
     private boolean isScheduledForDate(ScheduleSpec spec, LocalDate date) {
         return spec == null || ScheduleSpecEvaluator.isActionable(spec, date);
+    }
+
+    private ScheduleSpec effectiveScheduleSpec(GoalResponse goal, GoalPeriod activePeriod) {
+        if (activePeriod != null && activePeriod.getScheduleSpec() != null) {
+            return activePeriod.getScheduleSpec();
+        }
+        return goal != null ? goal.getScheduleSpec() : null;
     }
 
     private Optional<GoalPeriod> findActivePeriod(List<GoalPeriod> periods, LocalDate date) {
@@ -1022,15 +1086,14 @@ public class SmartTodoServiceV1 implements SmartTodoService {
     }
 
     private String determineTodoStatus(
-            boolean explicitSchedule,
-            boolean scheduledForToday,
+            boolean mustHappenToday,
             boolean streakAtRisk,
             boolean behindSchedule,
             boolean completedToday) {
         if (completedToday) {
             return "COMPLETED_TODAY";
         }
-        if (streakAtRisk || (explicitSchedule && scheduledForToday)) {
+        if (streakAtRisk || mustHappenToday) {
             return "MUST_DO_TODAY";
         }
         if (behindSchedule) {

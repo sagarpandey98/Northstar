@@ -46,7 +46,9 @@ But the response is now a wrapper object:
 Each todo item is placed into one of four buckets:
 
 - `MUST_DO_TODAY`
-  - explicitly scheduled today
+  - hard-scheduled today
+  - daily goals count here every day
+  - rule-driven schedules count here only when the selected date matches `schedule_spec`
   - or streak is at risk
 - `CATCH_UP_TODAY`
   - not strictly due today, but behind pace
@@ -87,6 +89,7 @@ V1.1 adds:
 - For `/date`, fields such as `scheduledForToday`, `completedToday`, and `expectedProgressByToday` should be interpreted as referring to the selected date.
 - Future date views are planning-oriented. They do not simulate future activity completion.
 - `CUSTOM` metrics are still less precise than `COUNT` and `DURATION` because the current activity payload does not carry custom quantity values.
+- `suggestedTimeMinutes` now comes from remaining period time commitment across remaining actionable dates, then steps up when catch-up is needed.
 
 ## Companion Docs
 

@@ -56,7 +56,9 @@ For each trackable goal:
 
 Used when:
 
-- the goal is explicitly scheduled for the evaluated date
+- the goal is hard-scheduled for the evaluated date
+  - daily goals count as hard-scheduled every day
+  - rule-driven weekly/monthly/quarterly/yearly goals count as hard-scheduled only when the selected date matches `schedule_spec`
 - or the goal streak is at risk
 
 ### `CATCH_UP_TODAY`
@@ -65,6 +67,7 @@ Used when:
 
 - the goal is behind expected pace for its active period
 - but is not already in the strict must-do bucket
+- and the date is still valid for recommendation
 
 ### `GOOD_TO_DO_TODAY`
 
@@ -165,6 +168,18 @@ Primary code changes:
 1. `CUSTOM` metric accuracy is still limited by the current activity payload.
 2. Future `/date` responses are planning-oriented, not predictive simulations.
 3. For flexible goals without explicit schedule rules, Smart Todo still surfaces them as candidates for the day rather than hiding them entirely.
+
+## Accuracy Changes After V1.1
+
+Two refinements were added after the initial revamp:
+
+1. rule-driven schedules are now date-gated more strictly
+   - if today does not match the goal's `schedule_spec` rules, the item is not surfaced as a recommendation for today
+   - period `schedule_spec` snapshots are used when available
+2. duration suggestions now use period commitment math first
+   - `minimumTimeCommittedPeriod` is treated as the primary source for daily time guidance
+   - Smart Todo distributes the remaining committed minutes across the remaining actionable dates in the period
+   - if the goal is already behind pace, the daily suggestion increases to the catch-up amount for the selected date
 
 ## Why This Is Better Than Old V1
 

@@ -97,6 +97,13 @@ Bottom row:
 - time chip from `suggestedTimeMinutes`
 - quick log CTA
 
+Interpretation notes:
+
+- if `scheduledForToday = false`, the backend has already decided the item is still valid to show because it is flexible or catch-up safe
+- for rule-driven schedules, items that do not match today's `schedule_spec` rules are now filtered out before they reach the frontend
+- `suggestedTimeMinutes` now reflects period commitment pacing, not a loose default
+- for duration goals, `minimumSessionPeriod` in the todo payload should be read as the period-level time commitment shown to the user
+
 Expandable details:
 
 - full `reasonMessages`

@@ -18,6 +18,7 @@ import java.lang.reflect.Proxy;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -117,6 +118,95 @@ class SmartTodoServiceV1Test {
         assertEquals(0, result.getSummary().getTotalItems());
     }
 
+    @Test
+    void getSmartTodosForDate_dailyGoalIsTreatedAsDueToday() {
+        LocalDate targetDate = LocalDate.of(2026, 4, 22);
+
+        GoalResponse dailyGoal = goal(30L, "daily-goal", "Meditation", Goal.Priority.MEDIUM, dailySchedule());
+        GoalPeriod period = period("daily-goal", targetDate, targetDate);
+
+        SmartTodoServiceV1 service = service(List.of(dailyGoal), List.of(), List.of(period));
+        SmartTodoListResponse result = service.getSmartTodosForDate(USER_ID, targetDate);
+
+        assertEquals(1, result.getItems().size());
+        SmartTodoResponse todo = result.getItems().get(0);
+        assertTrue(todo.isScheduledForToday());
+        assertEquals("MUST_DO_TODAY", todo.getTodoStatus());
+        assertTrue(todo.getReasonCodes().contains("SCHEDULED_TODAY"));
+    }
+
+    @Test
+    void getSmartTodosForDate_weeklyFlexibleGoalStillAppearsWhenCatchUpIsNeeded() {
+        LocalDate targetDate = LocalDate.of(2026, 4, 24);
+
+        GoalResponse flexibleGoal = goal(31L, "flex-weekly", "Strength Training", Goal.Priority.HIGH, flexibleWeekly(4));
+        flexibleGoal.setCurrentStreak(0);
+        GoalPeriod period = period("flex-weekly", LocalDate.of(2026, 4, 20), LocalDate.of(2026, 4, 26));
+
+        ActivityResponse mondayActivity = activity(31L, "2026-04-21T07:00:00+05:30");
+        SmartTodoServiceV1 service = service(List.of(flexibleGoal), List.of(mondayActivity), List.of(period));
+        SmartTodoListResponse result = service.getSmartTodosForDate(USER_ID, targetDate);
+
+        assertEquals(1, result.getItems().size());
+        SmartTodoResponse todo = result.getItems().get(0);
+        assertEquals("CATCH_UP_TODAY", todo.getTodoStatus());
+        assertFalse(todo.getReasonCodes().contains("SCHEDULED_TODAY"));
+    }
+
+    @Test
+    void getSmartTodosForDate_monthlyQuarterlyAndYearlyRulesOnlySurfaceOnMatchingDates() {
+        LocalDate matchingDate = LocalDate.of(2026, 1, 5);
+        LocalDate nonMatchingDate = LocalDate.of(2026, 1, 6);
+
+        GoalResponse monthlyGoal = goal(40L, "monthly-goal", "Monthly Review", Goal.Priority.MEDIUM, monthlyFixedDates(5, 25));
+        GoalResponse quarterlyGoal = goal(41L, "quarterly-goal", "Quarter Plan", Goal.Priority.MEDIUM, quarterlyMonthOfQuarter(1));
+        GoalResponse yearlyGoal = goal(42L, "yearly-goal", "Annual Deep Work", Goal.Priority.HIGH, yearlyDeepRule());
+
+        List<GoalPeriod> periods = List.of(
+            period("monthly-goal", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31)),
+            period("quarterly-goal", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 3, 31)),
+            period("yearly-goal", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31))
+        );
+
+        SmartTodoServiceV1 service = service(List.of(monthlyGoal, quarterlyGoal, yearlyGoal), List.of(), periods);
+
+        SmartTodoListResponse matchingResult = service.getSmartTodosForDate(USER_ID, matchingDate);
+        assertEquals(3, matchingResult.getItems().size());
+        assertTrue(matchingResult.getItems().stream().allMatch(SmartTodoResponse::isScheduledForToday));
+
+        SmartTodoListResponse nonMatchingResult = service.getSmartTodosForDate(USER_ID, nonMatchingDate);
+        assertTrue(nonMatchingResult.getItems().stream().noneMatch(todo -> "Monthly Review".equals(todo.getTitle())));
+        assertTrue(nonMatchingResult.getItems().stream().noneMatch(todo -> "Annual Deep Work".equals(todo.getTitle())));
+        assertEquals(1, nonMatchingResult.getItems().size());
+        assertEquals("Quarter Plan", nonMatchingResult.getItems().get(0).getTitle());
+    }
+
+    @Test
+    void getSmartTodosForDate_usesMinimumTimeCommittedPeriodForTodaySuggestion() {
+        LocalDate targetDate = LocalDate.of(2026, 4, 24);
+
+        GoalResponse durationGoal = goal(50L, "duration-goal", "Focused Study", Goal.Priority.HIGH, flexibleWeekly(1));
+        durationGoal.setMetric(Goal.Metric.DURATION);
+        durationGoal.setMinimumTimeCommittedPeriod(210);
+        durationGoal.setMinimumTimeCommittedDaily(20);
+
+        GoalPeriod period = period("duration-goal", LocalDate.of(2026, 4, 20), LocalDate.of(2026, 4, 26));
+        period.setMetric(Goal.Metric.DURATION);
+
+        ActivityResponse monday = activity(50L, "2026-04-21T07:00:00+05:30");
+        monday.setEndTime(monday.getStartTime().plusMinutes(60));
+
+        SmartTodoServiceV1 service = service(List.of(durationGoal), List.of(monday), List.of(period));
+        SmartTodoListResponse result = service.getSmartTodosForDate(USER_ID, targetDate);
+
+        assertEquals(1, result.getItems().size());
+        SmartTodoResponse todo = result.getItems().get(0);
+        assertEquals(210, todo.getMinimumSessionPeriod());
+        assertEquals(30, todo.getMinimumSessionDaily());
+        assertEquals(90, todo.getSuggestedTimeMinutes());
+        assertEquals(90, todo.getTargetProgress());
+    }
+
     private SmartTodoServiceV1 service(
             List<GoalResponse> goals,
             List<ActivityResponse> activities,
@@ -180,6 +270,70 @@ class SmartTodoServiceV1Test {
         return baseWeekly(minCheckins);
     }
 
+    private ScheduleSpec dailySchedule() {
+        ScheduleSpec spec = new ScheduleSpec();
+        spec.setVersion(2);
+        spec.setScheduleType(ScheduleSpec.ScheduleType.DAILY);
+        spec.setTimezone("Asia/Kolkata");
+        return spec;
+    }
+
+    private ScheduleSpec monthlyFixedDates(Object... daysOfMonth) {
+        ScheduleSpec spec = new ScheduleSpec();
+        spec.setVersion(2);
+        spec.setScheduleType(ScheduleSpec.ScheduleType.MONTHLY);
+        spec.setTimezone("Asia/Kolkata");
+        ScheduleSpec.Rule rule = new ScheduleSpec.Rule();
+        rule.setScope(ScheduleSpec.RuleScope.DAY_OF_MONTH);
+        rule.setMode(ScheduleSpec.RuleMode.STRICT);
+        rule.setValues(Arrays.asList(daysOfMonth));
+        spec.setRules(List.of(rule));
+        return spec;
+    }
+
+    private ScheduleSpec quarterlyMonthOfQuarter(int monthOfQuarter) {
+        ScheduleSpec spec = new ScheduleSpec();
+        spec.setVersion(2);
+        spec.setScheduleType(ScheduleSpec.ScheduleType.QUARTERLY);
+        spec.setTimezone("Asia/Kolkata");
+        ScheduleSpec.Rule rule = new ScheduleSpec.Rule();
+        rule.setScope(ScheduleSpec.RuleScope.MONTH_OF_QUARTER);
+        rule.setMode(ScheduleSpec.RuleMode.FLEXIBLE);
+        rule.setValues(List.of(monthOfQuarter));
+        spec.setRules(List.of(rule));
+        return spec;
+    }
+
+    private ScheduleSpec yearlyDeepRule() {
+        ScheduleSpec spec = new ScheduleSpec();
+        spec.setVersion(2);
+        spec.setScheduleType(ScheduleSpec.ScheduleType.YEARLY);
+        spec.setTimezone("Asia/Kolkata");
+        spec.setRules(List.of(
+            ruleWithChildren(
+                ScheduleSpec.RuleScope.QUARTER,
+                ScheduleSpec.RuleMode.STRICT,
+                values(1),
+                List.of(ruleWithChildren(
+                    ScheduleSpec.RuleScope.MONTH_OF_QUARTER,
+                    ScheduleSpec.RuleMode.STRICT,
+                    values(1),
+                    List.of(ruleWithChildren(
+                        ScheduleSpec.RuleScope.WEEK_OF_MONTH,
+                        ScheduleSpec.RuleMode.STRICT,
+                        values(1),
+                        List.of(rule(
+                            ScheduleSpec.RuleScope.DAY_OF_WEEK,
+                            ScheduleSpec.RuleMode.STRICT,
+                            "MONDAY"
+                        ))
+                    ))
+                ))
+            )
+        ));
+        return spec;
+    }
+
     private ScheduleSpec baseWeekly(int minCheckins) {
         ScheduleSpec spec = new ScheduleSpec();
         spec.setVersion(2);
@@ -189,6 +343,34 @@ class SmartTodoServiceV1Test {
         requirements.setMinCheckins(minCheckins);
         spec.setRequirements(requirements);
         return spec;
+    }
+
+    private ScheduleSpec.Rule rule(
+            ScheduleSpec.RuleScope scope,
+            ScheduleSpec.RuleMode mode,
+            Object... values) {
+        ScheduleSpec.Rule rule = new ScheduleSpec.Rule();
+        rule.setScope(scope);
+        rule.setMode(mode);
+        rule.setValues(values(values));
+        return rule;
+    }
+
+    private ScheduleSpec.Rule ruleWithChildren(
+            ScheduleSpec.RuleScope scope,
+            ScheduleSpec.RuleMode mode,
+            List<Object> values,
+            List<ScheduleSpec.Rule> children) {
+        ScheduleSpec.Rule rule = new ScheduleSpec.Rule();
+        rule.setScope(scope);
+        rule.setMode(mode);
+        rule.setValues(values);
+        rule.setRules(children);
+        return rule;
+    }
+
+    private List<Object> values(Object... values) {
+        return Arrays.asList(values);
     }
 
     private GoalPeriodRepository stubGoalPeriodRepository(List<GoalPeriod> periods) {
