@@ -19,6 +19,8 @@ The following fields were entirely purged from the `GoalRequest` and `GoalRespon
 - ✅ `scheduleSpec`: A structured JSON ruleset for highly flexible goal frequency constraints.
 - ✅ `minimumSessionPeriod`: Time boundary for minimum desired effort.
 - ✅ `maximumSessionPeriod`: Time boundary for maximum possible effort.
+- ✅ `minimumTimeCommittedPeriod`: Minimum total minutes the user wants to give in the full period.
+- ✅ `minimumTimeCommittedPerActivity`: Minimum minutes the user expects per activity/check-in.
 
 ## 2. API Endpoints
 All goal interactions occur through the standard REST controllers:
@@ -50,6 +52,8 @@ These fields entirely replace the old `scheduleDays` and `evaluationPeriod` logi
 | `scheduleSpec` | JSON Object | No | Replaces `scheduleDays` and `targetFrequencyWeekly`. Uses the V2 `scheduleType` + recursive `rules` contract. See schema below. |
 | `minimumSessionPeriod` | Integer | No | The absolute minimum minutes required over the period to be deemed "consistent". (e.g. 120 means at least 2 hours of gym/week). HeavILY factors into Consistency Score. |
 | `maximumSessionPeriod` | Integer | No | The ultimate time-limit target over the period (e.g. 300 minutes). Factors heavily into Progress Score limits. |
+| `minimumTimeCommittedPeriod` | Integer | No | Minimum total minutes the user plans to invest during the full schedule period. |
+| `minimumTimeCommittedPerActivity` | Integer | No | Minimum minutes the user expects for a single activity/check-in session. |
 | `allowDoubleLogging` | Boolean | No | Indicates whether this goal allows duplicate log entries on the same day. Default `true`. |
 | `missesAllowedPerPeriod`| Integer | No | Defines the "grace period" bounds (e.g., 2 free misses before the momentum breaks). |
 
@@ -106,6 +110,8 @@ Instead of passing `targetFrequencyWeekly`, the frontend will now build the UI t
   
   "minimumSessionPeriod": 120,    
   "maximumSessionPeriod": 600,   
+  "minimumTimeCommittedPeriod": 180,
+  "minimumTimeCommittedPerActivity": 30,
   
   "scheduleSpec": {
     "version": 2,
@@ -124,6 +130,27 @@ Instead of passing `targetFrequencyWeekly`, the frontend will now build the UI t
   }
 }
 ```
+
+## 4.1 Frontend Payload Migration
+
+Frontend should stop sending:
+
+- `minimumTimeCommittedDaily`
+
+Frontend should send instead:
+
+- `minimumTimeCommittedPerActivity`
+
+Example change:
+
+```json
+{
+  "minimumTimeCommittedPeriod": 180,
+  "minimumTimeCommittedPerActivity": 30
+}
+```
+
+The response payload now also returns `minimumTimeCommittedPerActivity` with the same meaning.
 
 ## 5. Smart Todo API
 

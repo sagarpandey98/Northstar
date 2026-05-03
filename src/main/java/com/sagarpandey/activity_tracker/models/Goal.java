@@ -26,9 +26,11 @@ package com.sagarpandey.activity_tracker.models;
 import com.sagarpandey.activity_tracker.enums.GoalType;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
 import com.sagarpandey.activity_tracker.enums.ScheduleDay;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -81,8 +83,10 @@ public class Goal {
     // How much time (in minutes) the user commits per period for this goal
     // e.g. 60 means "I can give at least 1 hour per period"
 
-    @Column(name = "minimum_time_committed_daily")
-    private Integer minimumTimeCommittedDaily;
+    @Column(name = "minimum_time_committed_per_activity")
+    private Integer minimumTimeCommittedPerActivity;
+    // Minimum minutes the user expects to spend per activity/check-in
+    // e.g. 20 means "when I do this goal, I usually want at least 20 minutes"
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -198,6 +202,10 @@ public class Goal {
     @Enumerated(EnumType.STRING)
     @Column(name = "health_status")
     private HealthStatus healthStatus;
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "goal", fetch = FetchType.LAZY)
+    private List<GoalPeriod> periods = new ArrayList<>();
 
     // --- Streak Tracking ---
     @Column(name = "current_streak")
@@ -486,6 +494,14 @@ public class Goal {
         this.healthStatus = healthStatus;
     }
 
+    public List<GoalPeriod> getPeriods() {
+        return periods;
+    }
+
+    public void setPeriods(List<GoalPeriod> periods) {
+        this.periods = periods;
+    }
+
     public Integer getCurrentStreak() {
         return currentStreak;
     }
@@ -510,12 +526,12 @@ public class Goal {
         this.minimumTimeCommittedPeriod = minimumTimeCommittedPeriod;
     }
 
-    public Integer getMinimumTimeCommittedDaily() {
-        return minimumTimeCommittedDaily;
+    public Integer getMinimumTimeCommittedPerActivity() {
+        return minimumTimeCommittedPerActivity;
     }
 
-    public void setMinimumTimeCommittedDaily(Integer minimumTimeCommittedDaily) {
-        this.minimumTimeCommittedDaily = minimumTimeCommittedDaily;
+    public void setMinimumTimeCommittedPerActivity(Integer minimumTimeCommittedPerActivity) {
+        this.minimumTimeCommittedPerActivity = minimumTimeCommittedPerActivity;
     }
 
 

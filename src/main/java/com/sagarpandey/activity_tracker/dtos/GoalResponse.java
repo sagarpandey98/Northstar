@@ -41,7 +41,7 @@ public class GoalResponse {
     private Integer minimumSessionPeriod;
     private Integer maximumSessionPeriod;
     private Integer minimumTimeCommittedPeriod;
-    private Integer minimumTimeCommittedDaily;
+    private Integer minimumTimeCommittedPerActivity;
     private Boolean allowDoubleLogging;
     private Integer missesAllowedPerPeriod;
 
@@ -147,8 +147,8 @@ public class GoalResponse {
     public Integer getMinimumTimeCommittedPeriod() { return minimumTimeCommittedPeriod; }
     public void setMinimumTimeCommittedPeriod(Integer minimumTimeCommittedPeriod) { this.minimumTimeCommittedPeriod = minimumTimeCommittedPeriod; }
 
-    public Integer getMinimumTimeCommittedDaily() { return minimumTimeCommittedDaily; }
-    public void setMinimumTimeCommittedDaily(Integer minimumTimeCommittedDaily) { this.minimumTimeCommittedDaily = minimumTimeCommittedDaily; }
+    public Integer getMinimumTimeCommittedPerActivity() { return minimumTimeCommittedPerActivity; }
+    public void setMinimumTimeCommittedPerActivity(Integer minimumTimeCommittedPerActivity) { this.minimumTimeCommittedPerActivity = minimumTimeCommittedPerActivity; }
 
     public Boolean getAllowDoubleLogging() { return allowDoubleLogging; }
     public void setAllowDoubleLogging(Boolean allowDoubleLogging) { this.allowDoubleLogging = allowDoubleLogging; }

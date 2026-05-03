@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDate;
 
 @Repository
 public interface GoalPeriodRepository extends JpaRepository<GoalPeriod, Long> {
@@ -14,6 +15,12 @@ public interface GoalPeriodRepository extends JpaRepository<GoalPeriod, Long> {
     List<GoalPeriod> findByParentGoalUuid(String parentGoalUuid);
 
     List<GoalPeriod> findByParentGoalUuidIn(List<String> parentGoalUuids);
+
+    Optional<GoalPeriod> findByParentGoalUuidAndUuid(String parentGoalUuid, String uuid);
+
+    Optional<GoalPeriod> findTopByParentGoalUuidOrderByPeriodEndDesc(String parentGoalUuid);
+
+    boolean existsByParentGoalUuidAndPeriodStartAndPeriodEnd(String parentGoalUuid, LocalDate periodStart, LocalDate periodEnd);
 
     // Fetch a specific period by its strict UUID
     Optional<GoalPeriod> findByUuid(String uuid);

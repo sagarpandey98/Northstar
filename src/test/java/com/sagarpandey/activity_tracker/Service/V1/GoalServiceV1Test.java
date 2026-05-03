@@ -432,6 +432,5 @@ class GoalServiceV1Test {
     private void stubFirstPeriodCreation() {
         GoalPeriod period = new GoalPeriod();
         when(goalPeriodService.createPeriodForGoal(goal)).thenReturn(period);
-        when(goalPeriodRepository.save(period)).thenReturn(period);
     }
 }

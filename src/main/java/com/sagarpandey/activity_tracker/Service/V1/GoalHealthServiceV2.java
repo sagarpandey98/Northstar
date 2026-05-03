@@ -1,272 +1,556 @@
 package com.sagarpandey.activity_tracker.Service.V1;
 
+import com.sagarpandey.activity_tracker.Repository.ActivityRepository;
+import com.sagarpandey.activity_tracker.Repository.GoalPeriodRepository;
+import com.sagarpandey.activity_tracker.Repository.GoalRepository;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalPeriodExpectationService;
+import com.sagarpandey.activity_tracker.dtos.health.GoalDayExpectation;
+import com.sagarpandey.activity_tracker.dtos.health.GoalPeriodExpectation;
+import com.sagarpandey.activity_tracker.enums.HealthStatus;
+import com.sagarpandey.activity_tracker.models.Activity;
 import com.sagarpandey.activity_tracker.models.Goal;
 import com.sagarpandey.activity_tracker.models.GoalPeriod;
-import com.sagarpandey.activity_tracker.Repository.GoalRepository;
-import com.sagarpandey.activity_tracker.Repository.GoalPeriodRepository;
-import com.sagarpandey.activity_tracker.Repository.ActivityRepository;
-import com.sagarpandey.activity_tracker.models.Activity;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+import com.sagarpandey.activity_tracker.models.ScheduleSpec;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.OptionalDouble;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
-
 @Service
 @Transactional
 public class GoalHealthServiceV2 implements GoalHealthService {
-    
+
     @Autowired
     private GoalRepository goalRepository;
-    
+
     @Autowired
     private GoalPeriodRepository goalPeriodRepository;
-    
+
     @Autowired
     private ActivityRepository activityRepository;
-    
-    // ============================================
-    // MASTER GOAL LEVEL MATH (The Dashboard View)
-    // ============================================
-    
+
+    @Autowired
+    private GoalPeriodExpectationService goalPeriodExpectationService;
+
     @Override
     public Double calculateOverallHealthScore(Goal goal) {
-        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getUuid());
-        if (allPeriods.isEmpty()) return null;
-        return allPeriods.stream().mapToDouble(this::calculatePeriodOverallHealthScore).average().orElse(0.0);
+        return isParentGoal(goal)
+            ? weightedChildAverage(fetchActiveChildren(goal), Goal::getHealthScore)
+            : averagePeriodMetric(goal, PeriodSnapshot::healthScore);
     }
-    
+
     @Override
     public Double calculateConsistencyScore(Goal goal) {
-        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getUuid());
-        if (allPeriods.isEmpty()) return null;
-        return allPeriods.stream().mapToDouble(this::calculatePeriodConsistencyScore).average().orElse(0.0);
+        return isParentGoal(goal)
+            ? weightedChildAverage(fetchActiveChildren(goal), Goal::getConsistencyScore)
+            : averagePeriodMetric(goal, PeriodSnapshot::consistencyScore);
     }
-    
+
     @Override
     public Double calculateMomentumScore(Goal goal) {
-        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getUuid());
-        if (allPeriods.isEmpty()) return null;
-        return allPeriods.stream().mapToDouble(this::calculatePeriodMomentumScore).average().orElse(0.0);
+        return isParentGoal(goal)
+            ? weightedChildAverage(fetchActiveChildren(goal), Goal::getMomentumScore)
+            : averagePeriodMetric(goal, PeriodSnapshot::momentumScore);
     }
-    
+
     @Override
     public Double calculateProgressScore(Goal goal) {
-        List<GoalPeriod> allPeriods = fetchSortedPeriods(goal.getUuid());
-        if (allPeriods.isEmpty()) return null;
-        return allPeriods.stream().mapToDouble(this::calculatePeriodProgressScore).average().orElse(0.0);
+        return isParentGoal(goal)
+            ? weightedChildAverage(fetchActiveChildren(goal), Goal::getProgressScore)
+            : averagePeriodMetric(goal, PeriodSnapshot::progressScore);
     }
 
     @Override
     public void updateGoalHealth(Goal goal) {
-        List<GoalPeriod> periods = fetchSortedPeriods(goal.getUuid());
-        
-        // Sync real activity data into periods first
-        syncActivitiesToPeriods(goal, periods);
-        
-        // Save computed health scores down into the Period table
-        for (GoalPeriod p : periods) {
-            updateGoalPeriodHealth(p); 
+        if (goal == null) {
+            return;
         }
-        
-        // Save the rollup averages into the Goal table
-        goal.setConsistencyScore(calculateConsistencyScore(goal));
-        goal.setMomentumScore(calculateMomentumScore(goal));
-        goal.setProgressPercentage(calculateProgressScore(goal));
-        goal.setHealthScore(calculateOverallHealthScore(goal));
-        
-        updateStreak(goal, periods);
-        goalRepository.save(goal);
+
+        if (isParentGoal(goal)) {
+            recalculateSubtree(goal);
+        } else {
+            recalculateLeafGoal(goal);
+        }
+
+        propagateHealthToAncestors(goal);
     }
 
-    private void syncActivitiesToPeriods(Goal goal, List<GoalPeriod> periods) {
-        for (GoalPeriod period : periods) {
-            // Define time window for this period
-            OffsetDateTime start = period.getPeriodStart().atStartOfDay().atOffset(ZoneOffset.UTC);
-            OffsetDateTime end = period.getPeriodEnd().plusDays(1).atStartOfDay().minusNanos(1).atOffset(ZoneOffset.UTC);
-            
-            // Fetch all activities in this window
-            List<Activity> activities = activityRepository.findByStartTimeGreaterThanEqualAndEndTimeLessThanEqualAndUserId(
-                start, end, goal.getUserId()
-            );
-            
-            // Filter by goalId
-            List<Activity> goalActivities = activities.stream()
-                .filter(a -> goal.getId().equals(a.getGoalId()))
-                .collect(Collectors.toList());
-            
-            // Update currentValue based on metric
-            if (goal.getMetric() == Goal.Metric.DURATION) {
-                double totalMinutes = goalActivities.stream()
-                    .filter(a -> a.getStartTime() != null && a.getEndTime() != null)
-                    .mapToDouble(a -> Duration.between(a.getStartTime(), a.getEndTime()).toMinutes())
-                    .sum();
-                period.setCurrentValue(totalMinutes);
-            } else {
-                // Default to COUNT
-                period.setCurrentValue((double) goalActivities.size());
-            }
-            
-            goalPeriodRepository.save(period);
-        }
-    }
-
-    // ============================================
-    // GOAL PERIOD LEVEL MATH (The Brain)
-    // ============================================
-    
     @Override
     public Double calculatePeriodConsistencyScore(GoalPeriod period) {
-        if (period.getMinimumSessionPeriod() == null || period.getMinimumSessionPeriod() <= 0) return 0.0;
-        Double current = period.getCurrentValue() != null ? period.getCurrentValue() : 0.0;
-        return Math.min(100.0, (current / period.getMinimumSessionPeriod()) * 100.0);
+        Goal parentGoal = resolveParentGoal(period);
+        PeriodSnapshot snapshot = computeSnapshotForPeriod(parentGoal, period);
+        return snapshot != null ? snapshot.consistencyScore() : null;
     }
-    
+
     @Override
     public Double calculatePeriodProgressScore(GoalPeriod period) {
-        if (period.getMaximumSessionPeriod() == null || period.getMaximumSessionPeriod() <= 0) return 0.0;
-        Double current = period.getCurrentValue() != null ? period.getCurrentValue() : 0.0;
-        return Math.min(100.0, (current / period.getMaximumSessionPeriod()) * 100.0);
+        Goal parentGoal = resolveParentGoal(period);
+        PeriodSnapshot snapshot = computeSnapshotForPeriod(parentGoal, period);
+        return snapshot != null ? snapshot.progressScore() : null;
     }
-    
+
     @Override
     public Double calculatePeriodMomentumScore(GoalPeriod period) {
-        List<GoalPeriod> allHistorical = fetchSortedPeriods(period.getParentGoalUuid());
-        int currentIndex = allHistorical.indexOf(period);
-        
-        // Safety grab by UUID if object mapping differs
-        if (currentIndex == -1) {
-            for (int i = 0; i < allHistorical.size(); i++) {
-                if (allHistorical.get(i).getUuid().equals(period.getUuid())) {
-                    currentIndex = i; break;
-                }
-            }
-        }
-        
-        if (currentIndex < 2) {
-            Double curCon = calculatePeriodConsistencyScore(period);
-            Double curProg = calculatePeriodProgressScore(period);
-            return (curCon + curProg) / 2.0; 
-        }
-        
-        GoalPeriod prev1 = allHistorical.get(currentIndex - 1);
-        GoalPeriod prev2 = allHistorical.get(currentIndex - 2);
-        
-        double currentAvg = (calculatePeriodConsistencyScore(period) + calculatePeriodProgressScore(period)) / 2.0;
-        double pastAvg1 = (calculatePeriodConsistencyScore(prev1) + calculatePeriodProgressScore(prev1)) / 2.0;
-        double pastAvg2 = (calculatePeriodConsistencyScore(prev2) + calculatePeriodProgressScore(prev2)) / 2.0;
-        
-        double targetToBeat = (pastAvg1 + pastAvg2) / 2.0;
-        
-        if (targetToBeat <= 0) {
-            return currentAvg > 0 ? 100.0 : 0.0;
-        }
-        
-        if (currentAvg >= targetToBeat) {
-            return 100.0; 
-        }
-        
-        return Math.min(100.0, (currentAvg / targetToBeat) * 100.0);
+        Goal parentGoal = resolveParentGoal(period);
+        PeriodSnapshot snapshot = computeSnapshotForPeriod(parentGoal, period);
+        return snapshot != null ? snapshot.momentumScore() : null;
     }
-    
+
     @Override
     public Double calculatePeriodOverallHealthScore(GoalPeriod period) {
-        // First get the parent goal to access userId
-        Optional<Goal> parentGoalOpt = goalRepository.findByUuidAndUserIdAndIsDeletedFalse(period.getParentGoalUuid(), null);
-        if (parentGoalOpt.isEmpty()) return 0.0;
-        Goal parentGoal = parentGoalOpt.get();
-        
-        int cw = (parentGoal != null && parentGoal.getConsistencyWeight() != null) ? parentGoal.getConsistencyWeight() : 33;
-        int mw = (parentGoal != null && parentGoal.getMomentumWeight() != null) ? parentGoal.getMomentumWeight() : 33;
-        int pw = (parentGoal != null && parentGoal.getProgressWeight() != null) ? parentGoal.getProgressWeight() : 34;
-        
-        double c = calculatePeriodConsistencyScore(period);
-        double m = calculatePeriodMomentumScore(period);
-        double p = calculatePeriodProgressScore(period);
-        
-        double sumProduct = (c * cw) + (m * mw) + (p * pw);
-        int totalWeight = cw + mw + pw;
-        
-        if (totalWeight <= 0) return 0.0;
-        return Math.min(100.0, sumProduct / totalWeight);
+        Goal parentGoal = resolveParentGoal(period);
+        PeriodSnapshot snapshot = computeSnapshotForPeriod(parentGoal, period);
+        return snapshot != null ? snapshot.healthScore() : null;
     }
-    
+
     @Override
     public void updateGoalPeriodHealth(GoalPeriod period) {
-        period.setConsistencyScore(calculatePeriodConsistencyScore(period));
-        period.setMomentumScore(calculatePeriodMomentumScore(period));
-        period.setProgressScore(calculatePeriodProgressScore(period));
-        period.setProgressPercentage(calculatePeriodProgressScore(period)); // Keep both for now
-        period.setHealthScore(calculatePeriodOverallHealthScore(period));
+        Goal parentGoal = resolveParentGoal(period);
+        PeriodSnapshot snapshot = computeSnapshotForPeriod(parentGoal, period);
+        if (snapshot == null) {
+            return;
+        }
+        applySnapshotToPeriod(period, snapshot);
         goalPeriodRepository.save(period);
     }
-    
-    // ============================================
-    // UTILS & DB SYNC
-    // ============================================
-    
-    private List<GoalPeriod> fetchSortedPeriods(String parentGoalUuid) {
-        if(parentGoalUuid == null) return new ArrayList<>();
-        List<GoalPeriod> periods = goalPeriodRepository.findByParentGoalUuid(parentGoalUuid);
-        periods.sort(Comparator.comparing(GoalPeriod::getPeriodStart));
-        return periods;
-    }
-    
+
     @Override
     public Map<String, Object> getHealthBreakdown(Goal goal) {
-        Map<String, Object> bd = new HashMap<>();
-        bd.put("goalUuid", goal.getUuid());
-        bd.put("overallHealthScore", calculateOverallHealthScore(goal));
-        bd.put("consistencyScore", calculateConsistencyScore(goal));
-        bd.put("momentumScore", calculateMomentumScore(goal));
-        bd.put("progressScore", calculateProgressScore(goal));
-        bd.put("currentStreak", goal.getCurrentStreak());
-        return bd;
+        Map<String, Object> breakdown = new HashMap<>();
+        breakdown.put("goalUuid", goal.getUuid());
+        breakdown.put("overallHealthScore", calculateOverallHealthScore(goal));
+        breakdown.put("consistencyScore", calculateConsistencyScore(goal));
+        breakdown.put("momentumScore", calculateMomentumScore(goal));
+        breakdown.put("progressScore", calculateProgressScore(goal));
+        breakdown.put("currentStreak", goal.getCurrentStreak());
+        breakdown.put("healthStatus", deriveHealthStatus(calculateOverallHealthScore(goal)));
+        return breakdown;
     }
-    
+
     @Override
     public Map<String, Double> calculateHealthScores(List<Goal> goals) {
         return goals.stream().collect(Collectors.toMap(Goal::getUuid, this::calculateOverallHealthScore));
     }
-    
+
     @Override
     public Map<String, Object> getHealthStatistics(String userId) {
         List<Goal> allGoals = goalRepository.findByUserIdAndIsDeletedFalse(userId);
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalGoals", allGoals.size());
-        
-        Double avgOverall = allGoals.stream().mapToDouble(g -> calculateOverallHealthScore(g) != null ? calculateOverallHealthScore(g) : 0.0).average().orElse(0.0);
-        stats.put("averageOverallHealthScore", avgOverall);
+
+        OptionalDouble avgOverall = allGoals.stream()
+            .map(this::calculateOverallHealthScore)
+            .filter(Objects::nonNull)
+            .mapToDouble(Double::doubleValue)
+            .average();
+        stats.put("averageOverallHealthScore", avgOverall.isPresent() ? round(avgOverall.getAsDouble()) : null);
         return stats;
     }
 
     @Override
     public boolean needsHealthUpdate(Goal goal) {
-        if (goal.getLastUpdatedAt() == null) return true;
+        if (goal == null || goal.getLastUpdatedAt() == null) {
+            return true;
+        }
         return goal.getLastUpdatedAt().isBefore(LocalDateTime.now().minusHours(1));
     }
-    
-    private void updateStreak(Goal goal, List<GoalPeriod> sortedPeriods) {
-        if (sortedPeriods.isEmpty()) {
+
+    private void recalculateSubtree(Goal goal) {
+        List<Goal> children = fetchActiveChildren(goal);
+        if (children.isEmpty()) {
+            recalculateLeafGoal(goal);
+            return;
+        }
+
+        for (Goal child : children) {
+            recalculateSubtree(child);
+        }
+        rollupParentGoalHealth(goal, children);
+        goalRepository.save(goal);
+    }
+
+    private void recalculateLeafGoal(Goal goal) {
+        List<GoalPeriod> periods = fetchSortedPeriods(goal.getUuid());
+        if (periods.isEmpty()) {
+            goal.setConsistencyScore(null);
+            goal.setMomentumScore(null);
+            goal.setProgressScore(null);
+            goal.setHealthScore(null);
+            goal.setHealthStatus(HealthStatus.UNTRACKED);
+            goal.setCurrentStreak(0);
+            goalRepository.save(goal);
+            return;
+        }
+
+        List<PeriodSnapshot> snapshots = computePeriodSnapshots(goal, periods);
+        for (PeriodSnapshot snapshot : snapshots) {
+            applySnapshotToPeriod(snapshot.period(), snapshot);
+            goalPeriodRepository.save(snapshot.period());
+        }
+
+        goal.setConsistencyScore(averageSnapshots(snapshots, PeriodSnapshot::consistencyScore));
+        goal.setMomentumScore(averageSnapshots(snapshots, PeriodSnapshot::momentumScore));
+        goal.setProgressScore(averageSnapshots(snapshots, PeriodSnapshot::progressScore));
+        goal.setHealthScore(averageSnapshots(snapshots, PeriodSnapshot::healthScore));
+        goal.setHealthStatus(deriveHealthStatus(goal.getHealthScore()));
+        updateStreak(goal, snapshots);
+        goalRepository.save(goal);
+    }
+
+    private void propagateHealthToAncestors(Goal goal) {
+        Goal current = goal;
+        while (current != null && current.getParentGoalId() != null && !current.getParentGoalId().isBlank()) {
+            Goal parent = goalRepository.findByUuidAndIsDeletedFalse(current.getParentGoalId()).orElse(null);
+            if (parent == null) {
+                return;
+            }
+            List<Goal> children = fetchActiveChildren(parent);
+            rollupParentGoalHealth(parent, children);
+            goalRepository.save(parent);
+            current = parent;
+        }
+    }
+
+    private void rollupParentGoalHealth(Goal goal, List<Goal> children) {
+        goal.setConsistencyScore(weightedChildAverage(children, Goal::getConsistencyScore));
+        goal.setMomentumScore(weightedChildAverage(children, Goal::getMomentumScore));
+        goal.setProgressScore(weightedChildAverage(children, Goal::getProgressScore));
+        goal.setHealthScore(weightedChildAverage(children, Goal::getHealthScore));
+        goal.setHealthStatus(deriveHealthStatus(goal.getHealthScore()));
+    }
+
+    private List<PeriodSnapshot> computePeriodSnapshots(Goal goal, List<GoalPeriod> periods) {
+        if (goal == null || periods == null || periods.isEmpty()) {
+            return List.of();
+        }
+
+        ZoneId zoneId = resolveZoneId(goal.getScheduleSpec());
+        List<Activity> goalActivities = fetchActivitiesForPeriods(goal, periods, zoneId);
+        List<PeriodSnapshot> snapshots = new ArrayList<>();
+
+        for (GoalPeriod period : periods) {
+            GoalPeriodExpectation expectation = goalPeriodExpectationService.buildExpectation(
+                goal,
+                period,
+                resolveEvaluationDate(period, zoneId)
+            );
+            Map<LocalDate, Double> actualUnitsByDate = aggregateActualUnitsByDate(goal, period, zoneId, goalActivities);
+            double actualUnitsToDate = calculateActualUnitsToDate(actualUnitsByDate, expectation.getEvaluationDate());
+
+            Double consistency = calculateExpectationScore(
+                expectation.getDailyExpectations(),
+                expectation.getEvaluationDate(),
+                actualUnitsByDate,
+                GoalDayExpectation::getExpectedMinimumUnits
+            );
+            Double progress = calculateExpectationScore(
+                expectation.getDailyExpectations(),
+                expectation.getEvaluationDate(),
+                actualUnitsByDate,
+                GoalDayExpectation::getExpectedTargetUnits
+            );
+            Double momentum = calculateMomentumScore(consistency, progress, snapshots);
+            Double health = calculateOverallHealthScore(goal, consistency, momentum, progress);
+            HealthStatus status = derivePeriodHealthStatus(expectation, consistency, progress, health, actualUnitsToDate);
+
+            double currentValue = round(actualUnitsByDate.values().stream().mapToDouble(Double::doubleValue).sum());
+            snapshots.add(new PeriodSnapshot(
+                period,
+                expectation,
+                actualUnitsByDate,
+                currentValue,
+                actualUnitsToDate,
+                consistency,
+                progress,
+                momentum,
+                health,
+                status
+            ));
+        }
+
+        return snapshots;
+    }
+
+    private PeriodSnapshot computeSnapshotForPeriod(Goal goal, GoalPeriod targetPeriod) {
+        if (goal == null || targetPeriod == null) {
+            return null;
+        }
+        List<GoalPeriod> periods = fetchSortedPeriods(goal.getUuid());
+        if (periods.isEmpty()) {
+            return null;
+        }
+        return computePeriodSnapshots(goal, periods).stream()
+            .filter(snapshot -> snapshot.period().getUuid().equals(targetPeriod.getUuid()))
+            .findFirst()
+            .orElse(null);
+    }
+
+    private List<Activity> fetchActivitiesForPeriods(Goal goal, List<GoalPeriod> periods, ZoneId zoneId) {
+        if (goal == null || goal.getId() == null || goal.getUserId() == null || periods == null || periods.isEmpty()) {
+            return List.of();
+        }
+
+        LocalDate startDate = periods.stream()
+            .map(GoalPeriod::getPeriodStart)
+            .filter(Objects::nonNull)
+            .min(Comparator.naturalOrder())
+            .orElse(null);
+        LocalDate endDate = periods.stream()
+            .map(GoalPeriod::getPeriodEnd)
+            .filter(Objects::nonNull)
+            .max(Comparator.naturalOrder())
+            .orElse(null);
+
+        if (startDate == null || endDate == null) {
+            return List.of();
+        }
+
+        OffsetDateTime periodStartInclusive = startDate.atStartOfDay(zoneId).toOffsetDateTime();
+        OffsetDateTime periodEndExclusive = endDate.plusDays(1).atStartOfDay(zoneId).toOffsetDateTime();
+        return activityRepository.findGoalActivitiesOverlappingPeriod(
+            goal.getId(),
+            goal.getUserId(),
+            periodStartInclusive,
+            periodEndExclusive
+        );
+    }
+
+    private Map<LocalDate, Double> aggregateActualUnitsByDate(
+            Goal goal,
+            GoalPeriod period,
+            ZoneId zoneId,
+            List<Activity> goalActivities) {
+        Map<LocalDate, Double> actualUnitsByDate = new LinkedHashMap<>();
+        if (goal == null || period == null || goalActivities == null || goalActivities.isEmpty()) {
+            return actualUnitsByDate;
+        }
+
+        OffsetDateTime periodStartInclusive = period.getPeriodStart().atStartOfDay(zoneId).toOffsetDateTime();
+        OffsetDateTime periodEndExclusive = period.getPeriodEnd().plusDays(1).atStartOfDay(zoneId).toOffsetDateTime();
+
+        for (Activity activity : goalActivities) {
+            if (activity == null || activity.getStartTime() == null) {
+                continue;
+            }
+
+            if (goal.getMetric() == Goal.Metric.DURATION) {
+                distributeDurationByDay(activity, zoneId, periodStartInclusive, periodEndExclusive, actualUnitsByDate);
+                continue;
+            }
+
+            LocalDate localStartDate = activity.getStartTime().atZoneSameInstant(zoneId).toLocalDate();
+            if (localStartDate.isBefore(period.getPeriodStart()) || localStartDate.isAfter(period.getPeriodEnd())) {
+                continue;
+            }
+            actualUnitsByDate.merge(localStartDate, 1.0, Double::sum);
+        }
+
+        return actualUnitsByDate;
+    }
+
+    private void distributeDurationByDay(
+            Activity activity,
+            ZoneId zoneId,
+            OffsetDateTime periodStartInclusive,
+            OffsetDateTime periodEndExclusive,
+            Map<LocalDate, Double> actualUnitsByDate) {
+        OffsetDateTime activityStart = activity.getStartTime();
+        OffsetDateTime activityEnd = activity.getEndTime() != null ? activity.getEndTime() : activity.getStartTime();
+        if (activityEnd == null || !activityEnd.isAfter(activityStart)) {
+            return;
+        }
+
+        OffsetDateTime overlapStart = activityStart.isBefore(periodStartInclusive) ? periodStartInclusive : activityStart;
+        OffsetDateTime overlapEnd = activityEnd.isAfter(periodEndExclusive) ? periodEndExclusive : activityEnd;
+        if (!overlapEnd.isAfter(overlapStart)) {
+            return;
+        }
+
+        OffsetDateTime cursor = overlapStart;
+        while (cursor.isBefore(overlapEnd)) {
+            LocalDate localDate = cursor.atZoneSameInstant(zoneId).toLocalDate();
+            OffsetDateTime nextBoundary = localDate.plusDays(1).atStartOfDay(zoneId).toOffsetDateTime();
+            OffsetDateTime segmentEnd = nextBoundary.isBefore(overlapEnd) ? nextBoundary : overlapEnd;
+            double minutes = Duration.between(cursor, segmentEnd).toSeconds() / 60.0;
+            if (minutes > 0.0) {
+                actualUnitsByDate.merge(localDate, minutes, Double::sum);
+            }
+            cursor = segmentEnd;
+        }
+    }
+
+    private Double calculateExpectationScore(
+            List<GoalDayExpectation> dailyExpectations,
+            LocalDate evaluationDate,
+            Map<LocalDate, Double> actualUnitsByDate,
+            Function<GoalDayExpectation, Double> expectationAccessor) {
+        if (dailyExpectations == null || dailyExpectations.isEmpty() || evaluationDate == null) {
+            return null;
+        }
+
+        double expectedTotal = 0.0;
+        double fulfilledTotal = 0.0;
+        for (GoalDayExpectation day : dailyExpectations) {
+            if (day == null || day.getDate() == null || day.getDate().isAfter(evaluationDate)) {
+                continue;
+            }
+            double expected = sanitize(expectationAccessor.apply(day));
+            if (expected <= 0.0) {
+                continue;
+            }
+            expectedTotal += expected;
+            double actual = sanitize(actualUnitsByDate.get(day.getDate()));
+            fulfilledTotal += Math.min(actual, expected);
+        }
+
+        if (expectedTotal <= 0.0) {
+            return null;
+        }
+
+        return round(Math.min(100.0, (fulfilledTotal / expectedTotal) * 100.0));
+    }
+
+    private Double calculateMomentumScore(
+            Double consistency,
+            Double progress,
+            List<PeriodSnapshot> previousSnapshots) {
+        Double currentComposite = averageOf(consistency, progress);
+        if (currentComposite == null) {
+            return null;
+        }
+        if (previousSnapshots == null || previousSnapshots.isEmpty()) {
+            return 100.0;
+        }
+
+        List<Double> historicalComposites = previousSnapshots.stream()
+            .map(snapshot -> averageOf(snapshot.consistencyScore(), snapshot.progressScore()))
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+        if (historicalComposites.isEmpty()) {
+            return 100.0;
+        }
+
+        int startIndex = Math.max(0, historicalComposites.size() - 2);
+        List<Double> baselineWindow = historicalComposites.subList(startIndex, historicalComposites.size());
+        double baseline = baselineWindow.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        if (baseline <= 0.0) {
+            return currentComposite > 0.0 ? 100.0 : 0.0;
+        }
+        if (currentComposite >= baseline) {
+            return 100.0;
+        }
+        return round(Math.min(100.0, (currentComposite / baseline) * 100.0));
+    }
+
+    private Double calculateOverallHealthScore(
+            Goal goal,
+            Double consistency,
+            Double momentum,
+            Double progress) {
+        if (goal == null) {
+            return null;
+        }
+
+        List<WeightedScore> weightedScores = new ArrayList<>();
+        if (consistency != null) {
+            weightedScores.add(new WeightedScore(consistency, effectiveConsistencyWeight(goal)));
+        }
+        if (momentum != null) {
+            weightedScores.add(new WeightedScore(momentum, effectiveMomentumWeight(goal)));
+        }
+        if (progress != null) {
+            weightedScores.add(new WeightedScore(progress, effectiveProgressWeight(goal)));
+        }
+        if (weightedScores.isEmpty()) {
+            return null;
+        }
+
+        double weightedSum = weightedScores.stream().mapToDouble(score -> score.score() * score.weight()).sum();
+        int totalWeight = weightedScores.stream().mapToInt(WeightedScore::weight).sum();
+        if (totalWeight <= 0) {
+            return null;
+        }
+        return round(Math.min(100.0, weightedSum / totalWeight));
+    }
+
+    private HealthStatus derivePeriodHealthStatus(
+            GoalPeriodExpectation expectation,
+            Double consistency,
+            Double progress,
+            Double health,
+            double actualUnitsToDate) {
+        if (expectation == null) {
+            return HealthStatus.UNTRACKED;
+        }
+        boolean noElapsedExpectation = sanitize(expectation.getExpectedMinimumUnitsToDate()) <= 0.0
+            && sanitize(expectation.getExpectedTargetUnitsToDate()) <= 0.0;
+        if (noElapsedExpectation && actualUnitsToDate <= 0.0) {
+            return HealthStatus.UNTRACKED;
+        }
+        if (consistency == null && progress == null && health == null) {
+            return HealthStatus.UNTRACKED;
+        }
+        return deriveHealthStatus(health);
+    }
+
+    private HealthStatus deriveHealthStatus(Double healthScore) {
+        if (healthScore == null) {
+            return HealthStatus.UNTRACKED;
+        }
+        if (healthScore >= 80.0) {
+            return HealthStatus.THRIVING;
+        }
+        if (healthScore >= 60.0) {
+            return HealthStatus.ON_TRACK;
+        }
+        if (healthScore >= 40.0) {
+            return HealthStatus.AT_RISK;
+        }
+        return HealthStatus.CRITICAL;
+    }
+
+    private void applySnapshotToPeriod(GoalPeriod period, PeriodSnapshot snapshot) {
+        period.setCurrentValue(snapshot.currentValue());
+        period.setConsistencyScore(snapshot.consistencyScore());
+        period.setMomentumScore(snapshot.momentumScore());
+        period.setProgressScore(snapshot.progressScore());
+        period.setProgressPercentage(snapshot.progressScore());
+        period.setHealthScore(snapshot.healthScore());
+        period.setHealthStatus(snapshot.healthStatus());
+    }
+
+    private void updateStreak(Goal goal, List<PeriodSnapshot> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) {
             goal.setCurrentStreak(0);
             return;
         }
-        
+
         int streak = 0;
         int missesAllowed = goal.getMissesAllowedPerPeriod() != null ? goal.getMissesAllowedPerPeriod() : 0;
         int missesUsed = 0;
-        
-        for (GoalPeriod p : sortedPeriods) {
-            boolean hit = calculatePeriodConsistencyScore(p) >= 100.0;
+        int longestStreak = goal.getLongestStreak() != null ? goal.getLongestStreak() : 0;
+
+        for (PeriodSnapshot snapshot : snapshots) {
+            boolean hit = snapshot.consistencyScore() != null && snapshot.consistencyScore() >= 100.0;
             if (hit) {
                 streak++;
-            } else {
+                longestStreak = Math.max(longestStreak, streak);
+            } else if (snapshot.healthStatus() != HealthStatus.UNTRACKED) {
                 missesUsed++;
                 if (missesUsed > missesAllowed) {
                     streak = 0;
@@ -274,10 +558,176 @@ public class GoalHealthServiceV2 implements GoalHealthService {
                 }
             }
         }
-        
+
         goal.setCurrentStreak(streak);
-        if (goal.getLongestStreak() == null || streak > goal.getLongestStreak()) {
-            goal.setLongestStreak(streak);
-        }
+        goal.setLongestStreak(longestStreak);
     }
+
+    private Double averagePeriodMetric(Goal goal, Function<PeriodSnapshot, Double> extractor) {
+        if (goal == null) {
+            return null;
+        }
+        List<GoalPeriod> periods = fetchSortedPeriods(goal.getUuid());
+        return averageSnapshots(computePeriodSnapshots(goal, periods), extractor);
+    }
+
+    private Double averageSnapshots(List<PeriodSnapshot> snapshots, Function<PeriodSnapshot, Double> extractor) {
+        if (snapshots == null || snapshots.isEmpty()) {
+            return null;
+        }
+        OptionalDouble average = snapshots.stream()
+            .map(extractor)
+            .filter(Objects::nonNull)
+            .mapToDouble(Double::doubleValue)
+            .average();
+        return average.isPresent() ? round(average.getAsDouble()) : null;
+    }
+
+    private Double weightedChildAverage(List<Goal> children, Function<Goal, Double> extractor) {
+        if (children == null || children.isEmpty()) {
+            return null;
+        }
+        double weightedSum = 0.0;
+        double totalWeight = 0.0;
+        for (Goal child : children) {
+            Double value = extractor.apply(child);
+            if (value == null) {
+                continue;
+            }
+            double weight = getPriorityWeight(child.getPriority());
+            weightedSum += value * weight;
+            totalWeight += weight;
+        }
+        if (totalWeight <= 0.0) {
+            return null;
+        }
+        return round(Math.min(100.0, weightedSum / totalWeight));
+    }
+
+    private double getPriorityWeight(Goal.Priority priority) {
+        if (priority == null) {
+            return 1.0;
+        }
+        return switch (priority) {
+            case CRITICAL -> 4.0;
+            case HIGH -> 3.0;
+            case MEDIUM -> 2.0;
+            case LOW -> 1.0;
+        };
+    }
+
+    private boolean isParentGoal(Goal goal) {
+        return !fetchActiveChildren(goal).isEmpty();
+    }
+
+    private List<Goal> fetchActiveChildren(Goal goal) {
+        if (goal == null || goal.getUuid() == null || goal.getUserId() == null) {
+            return List.of();
+        }
+        return goalRepository.findByParentGoalIdAndUserIdAndIsDeletedFalse(goal.getUuid(), goal.getUserId());
+    }
+
+    private List<GoalPeriod> fetchSortedPeriods(String goalUuid) {
+        if (goalUuid == null) {
+            return List.of();
+        }
+        return goalPeriodRepository.findByParentGoalUuid(goalUuid).stream()
+            .sorted(Comparator.comparing(GoalPeriod::getPeriodStart))
+            .collect(Collectors.toList());
+    }
+
+    private Goal resolveParentGoal(GoalPeriod period) {
+        if (period == null) {
+            return null;
+        }
+        if (period.getGoal() != null) {
+            return period.getGoal();
+        }
+        return goalRepository.findByUuidAndIsDeletedFalse(period.getParentGoalUuid()).orElse(null);
+    }
+
+    private LocalDate resolveEvaluationDate(GoalPeriod period, ZoneId zoneId) {
+        LocalDate today = LocalDate.now(zoneId);
+        if (period == null || period.getPeriodStart() == null || period.getPeriodEnd() == null) {
+            return today;
+        }
+        if (today.isBefore(period.getPeriodStart())) {
+            return today;
+        }
+        return today.isAfter(period.getPeriodEnd()) ? period.getPeriodEnd() : today;
+    }
+
+    private ZoneId resolveZoneId(ScheduleSpec spec) {
+        if (spec != null && spec.getTimezone() != null && !spec.getTimezone().isBlank()) {
+            try {
+                return ZoneId.of(spec.getTimezone());
+            } catch (Exception ignored) {
+                // Fall through to UTC.
+            }
+        }
+        return ZoneId.of("UTC");
+    }
+
+    private double calculateActualUnitsToDate(Map<LocalDate, Double> actualUnitsByDate, LocalDate evaluationDate) {
+        if (actualUnitsByDate == null || actualUnitsByDate.isEmpty() || evaluationDate == null) {
+            return 0.0;
+        }
+        return round(actualUnitsByDate.entrySet().stream()
+            .filter(entry -> entry.getKey() != null && !entry.getKey().isAfter(evaluationDate))
+            .mapToDouble(entry -> sanitize(entry.getValue()))
+            .sum());
+    }
+
+    private Double averageOf(Double left, Double right) {
+        List<Double> values = new ArrayList<>();
+        if (left != null) {
+            values.add(left);
+        }
+        if (right != null) {
+            values.add(right);
+        }
+        if (values.isEmpty()) {
+            return null;
+        }
+        return values.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+    }
+
+    private int effectiveConsistencyWeight(Goal goal) {
+        return goal.getConsistencyWeight() != null ? goal.getConsistencyWeight() : goal.getEffectiveConsistencyWeight();
+    }
+
+    private int effectiveMomentumWeight(Goal goal) {
+        return goal.getMomentumWeight() != null ? goal.getMomentumWeight() : goal.getEffectiveMomentumWeight();
+    }
+
+    private int effectiveProgressWeight(Goal goal) {
+        return goal.getProgressWeight() != null ? goal.getProgressWeight() : goal.getEffectiveProgressWeight();
+    }
+
+    private double sanitize(Number value) {
+        if (value == null) {
+            return 0.0;
+        }
+        double numeric = value.doubleValue();
+        return numeric > 0.0 ? numeric : 0.0;
+    }
+
+    private double round(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
+
+    private record WeightedScore(Double score, int weight) {}
+
+    private record PeriodSnapshot(
+        GoalPeriod period,
+        GoalPeriodExpectation expectation,
+        Map<LocalDate, Double> actualUnitsByDate,
+        double currentValue,
+        double actualUnitsToDate,
+        Double consistencyScore,
+        Double progressScore,
+        Double momentumScore,
+        Double healthScore,
+        HealthStatus healthStatus
+    ) {}
 }

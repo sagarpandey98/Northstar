@@ -22,13 +22,13 @@ public class GoalRequest {
     
     private Goal.Status status;
     
-    @NotNull(message = "Metric is required")
+    /** Required for trackable (non-milestone) goals; validated in {@code GoalServiceV1}. */
     private Goal.Metric metric;
     
-    @NotNull(message = "Target operator is required")
+    /** Required for trackable (non-milestone) goals; validated in {@code GoalServiceV1}. */
     private Goal.TargetOperator targetOperator;
     
-    @NotNull(message = "Target value is required")
+    /** Required for trackable (non-milestone) goals; validated in {@code GoalServiceV1}. */
     @Min(value = 0, message = "Target value must be non-negative")
     private Double targetValue;
     
@@ -48,7 +48,7 @@ public class GoalRequest {
     private Integer minimumSessionPeriod;
     private Integer maximumSessionPeriod;
     private Integer minimumTimeCommittedPeriod;
-    private Integer minimumTimeCommittedDaily;
+    private Integer minimumTimeCommittedPerActivity;
 
     private Boolean allowDoubleLogging;
     private Integer missesAllowedPerPeriod;
@@ -111,8 +111,8 @@ public class GoalRequest {
     public Integer getMinimumTimeCommittedPeriod() { return minimumTimeCommittedPeriod; }
     public void setMinimumTimeCommittedPeriod(Integer minimumTimeCommittedPeriod) { this.minimumTimeCommittedPeriod = minimumTimeCommittedPeriod; }
 
-    public Integer getMinimumTimeCommittedDaily() { return minimumTimeCommittedDaily; }
-    public void setMinimumTimeCommittedDaily(Integer minimumTimeCommittedDaily) { this.minimumTimeCommittedDaily = minimumTimeCommittedDaily; }
+    public Integer getMinimumTimeCommittedPerActivity() { return minimumTimeCommittedPerActivity; }
+    public void setMinimumTimeCommittedPerActivity(Integer minimumTimeCommittedPerActivity) { this.minimumTimeCommittedPerActivity = minimumTimeCommittedPerActivity; }
 
     public Boolean getAllowDoubleLogging() { return allowDoubleLogging; }
     public void setAllowDoubleLogging(Boolean allowDoubleLogging) { this.allowDoubleLogging = allowDoubleLogging; }

@@ -27,10 +27,20 @@ public class GoalMapper {
     @Lazy
     private RollupService rollupService;
     
+    private String normalizeParentGoalId(String parentGoalId) {
+        if (parentGoalId == null) {
+            return null;
+        }
+
+        String trimmed = parentGoalId.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     public Goal toEntity(GoalRequest request, String userId) {
         Goal goal = new Goal();
         goal.setUuid(UUID.randomUUID().toString());
         goal.setUserId(userId);
+        boolean milestone = Boolean.TRUE.equals(request.getIsMilestone());
         goal.setTitle(request.getTitle());
         goal.setDescription(request.getDescription());
         goal.setPriority(request.getPriority());
@@ -39,13 +49,18 @@ public class GoalMapper {
         goal.setTargetOperator(request.getTargetOperator());
         goal.setTargetValue(request.getTargetValue());
         goal.setCurrentValue(request.getCurrentValue() != null ? request.getCurrentValue() : 0.0);
-        goal.setStartDate(request.getStartDate() != null ? request.getStartDate() : LocalDateTime.now());
+        if (milestone) {
+            goal.setStartDate(request.getStartDate());
+        } else {
+            goal.setStartDate(request.getStartDate() != null ? request.getStartDate() : LocalDateTime.now());
+        }
         goal.setTargetDate(request.getTargetDate());
         goal.setParentGoalId(request.getParentGoalId());
         goal.setIsMilestone(request.getIsMilestone() != null ? request.getIsMilestone() : false);
         goal.setCreatedAt(LocalDateTime.now());
         goal.setLastUpdatedAt(LocalDateTime.now());
         goal.setIsDeleted(false);
+        applyMilestoneTrackingDefaults(goal);
 
         // New Ledger Fields
         goal.setGoalType(request.getGoalType());
@@ -53,7 +68,7 @@ public class GoalMapper {
         goal.setMinimumSessionPeriod(request.getMinimumSessionPeriod());
         goal.setMaximumSessionPeriod(request.getMaximumSessionPeriod());
         goal.setMinimumTimeCommittedPeriod(request.getMinimumTimeCommittedPeriod());
-        goal.setMinimumTimeCommittedDaily(request.getMinimumTimeCommittedDaily());
+        goal.setMinimumTimeCommittedPerActivity(request.getMinimumTimeCommittedPerActivity());
         goal.setAllowDoubleLogging(request.getAllowDoubleLogging() != null ? request.getAllowDoubleLogging() : Boolean.TRUE);
         goal.setMissesAllowedPerPeriod(request.getMissesAllowedPerPeriod());
 
@@ -82,27 +97,46 @@ public class GoalMapper {
         if (request.getStatus() != null) {
             goal.setStatus(request.getStatus());
         }
-        goal.setMetric(request.getMetric());
-        goal.setTargetOperator(request.getTargetOperator());
-        goal.setTargetValue(request.getTargetValue());
-        if (request.getCurrentValue() != null) {
-            goal.setCurrentValue(request.getCurrentValue());
-        }
-        goal.setStartDate(request.getStartDate());
-        goal.setTargetDate(request.getTargetDate());
-        goal.setParentGoalId(request.getParentGoalId());
         if (request.getIsMilestone() != null) {
             goal.setIsMilestone(request.getIsMilestone());
         }
+        boolean milestone = Boolean.TRUE.equals(goal.getIsMilestone());
+        if (milestone) {
+            if (request.getMetric() != null) {
+                goal.setMetric(request.getMetric());
+            }
+            if (request.getTargetOperator() != null) {
+                goal.setTargetOperator(request.getTargetOperator());
+            }
+            if (request.getTargetValue() != null) {
+                goal.setTargetValue(request.getTargetValue());
+            }
+        } else {
+            goal.setMetric(request.getMetric());
+            goal.setTargetOperator(request.getTargetOperator());
+            goal.setTargetValue(request.getTargetValue());
+        }
+        if (request.getCurrentValue() != null) {
+            goal.setCurrentValue(request.getCurrentValue());
+        }
+        if (request.getStartDate() != null) {
+            goal.setStartDate(request.getStartDate());
+        }
+        if (request.getTargetDate() != null) {
+            goal.setTargetDate(request.getTargetDate());
+        }
+        goal.setParentGoalId(request.getParentGoalId());
         goal.setLastUpdatedAt(LocalDateTime.now());
 
         // New Ledger Fields
-        goal.setGoalType(request.getGoalType());
+        if (request.getGoalType() != null) {
+            goal.setGoalType(request.getGoalType());
+        }
         goal.setScheduleSpec(request.getScheduleSpec());
         goal.setMinimumSessionPeriod(request.getMinimumSessionPeriod());
         goal.setMaximumSessionPeriod(request.getMaximumSessionPeriod());
         goal.setMinimumTimeCommittedPeriod(request.getMinimumTimeCommittedPeriod());
-        goal.setMinimumTimeCommittedDaily(request.getMinimumTimeCommittedDaily());
+        goal.setMinimumTimeCommittedPerActivity(request.getMinimumTimeCommittedPerActivity());
         goal.setAllowDoubleLogging(request.getAllowDoubleLogging() != null ? request.getAllowDoubleLogging() : Boolean.TRUE);
         goal.setMissesAllowedPerPeriod(request.getMissesAllowedPerPeriod());
 
@@ -117,7 +151,26 @@ public class GoalMapper {
         // If no weights provided, they'll use goal type defaults via getEffective*Weight() methods
         
         goal.setProgressPercentage(calculateProgressPercentage(goal));
+        applyMilestoneTrackingDefaults(goal);
         updateStatusBasedOnProgress(goal);
+    }
+
+    /**
+     * Milestone goals are not user-tracked; DB still requires metric / operator / targetValue.
+     */
+    private void applyMilestoneTrackingDefaults(Goal goal) {
+        if (!Boolean.TRUE.equals(goal.getIsMilestone())) {
+            return;
+        }
+        if (goal.getMetric() == null) {
+            goal.setMetric(Goal.Metric.COUNT);
+        }
+        if (goal.getTargetOperator() == null) {
+            goal.setTargetOperator(Goal.TargetOperator.EQUAL);
+        }
+        if (goal.getTargetValue() == null) {
+            goal.setTargetValue(0.0);
+        }
     }
     
     public GoalResponse toResponse(Goal goal) {
@@ -137,7 +190,7 @@ public class GoalMapper {
         response.setStartDate(goal.getStartDate());
         response.setTargetDate(goal.getTargetDate());
         response.setCompletedDate(goal.getCompletedDate());
-        response.setParentGoalId(goal.getParentGoalId());
+        response.setParentGoalId(normalizeParentGoalId(goal.getParentGoalId()));
         response.setIsMilestone(goal.getIsMilestone());
         response.setCreatedAt(goal.getCreatedAt());
         response.setLastUpdatedAt(goal.getLastUpdatedAt());
@@ -150,7 +203,7 @@ public class GoalMapper {
         response.setMinimumSessionPeriod(goal.getMinimumSessionPeriod());
         response.setMaximumSessionPeriod(goal.getMaximumSessionPeriod());
         response.setMinimumTimeCommittedPeriod(goal.getMinimumTimeCommittedPeriod());
-        response.setMinimumTimeCommittedDaily(goal.getMinimumTimeCommittedDaily());
+        response.setMinimumTimeCommittedPerActivity(goal.getMinimumTimeCommittedPerActivity());
         response.setAllowDoubleLogging(goal.getAllowDoubleLogging());
         response.setMissesAllowedPerPeriod(goal.getMissesAllowedPerPeriod());
         response.setConsistencyWeight(goal.getConsistencyWeight() != null ? 
@@ -194,12 +247,14 @@ public class GoalMapper {
     public List<GoalResponse> buildGoalTree(List<Goal> goals) {
         List<GoalResponse> responses = toResponseList(goals);
         Map<String, GoalResponse> goalMap = responses.stream().collect(Collectors.toMap(GoalResponse::getUuid, goal -> goal));
-        List<GoalResponse> rootGoals = responses.stream().filter(goal -> goal.getParentGoalId() == null).collect(Collectors.toList());
+        List<GoalResponse> rootGoals = responses.stream()
+                .filter(goal -> normalizeParentGoalId(goal.getParentGoalId()) == null)
+                .collect(Collectors.toList());
         
         responses.stream()
-                .filter(goal -> goal.getParentGoalId() != null)
+                .filter(goal -> normalizeParentGoalId(goal.getParentGoalId()) != null)
                 .forEach(goal -> {
-                    GoalResponse parent = goalMap.get(goal.getParentGoalId());
+                    GoalResponse parent = goalMap.get(normalizeParentGoalId(goal.getParentGoalId()));
                     if (parent != null) {
                         if (parent.getChildGoals() == null) {
                             parent.setChildGoals(new ArrayList<>());

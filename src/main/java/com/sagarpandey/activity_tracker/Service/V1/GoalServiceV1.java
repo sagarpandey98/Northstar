@@ -11,6 +11,7 @@ import com.sagarpandey.activity_tracker.models.GoalPeriod;
 import com.sagarpandey.activity_tracker.dtos.GoalRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalResponse;
 import com.sagarpandey.activity_tracker.dtos.GoalStatsResponse;
+import com.sagarpandey.activity_tracker.enums.GoalType;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
 import com.sagarpandey.activity_tracker.models.Goal;
 import com.sagarpandey.activity_tracker.utils.ScheduleSpecEvaluator;
@@ -43,7 +44,7 @@ public class GoalServiceV1 implements GoalService {
     
     @Override
     public GoalResponse createGoal(GoalRequest request, String userId) {
-        validateGoalRequest(request);
+        validateGoalRequest(request, null);
         
         // Validate parent goal exists if specified
         if (request.getParentGoalId() != null) {
@@ -71,8 +72,7 @@ public class GoalServiceV1 implements GoalService {
         // Create the very first active Period for this Goal automatically
         // Only for trackable goals (not milestone goals)
         if (!savedGoal.getIsMilestone()) {
-            GoalPeriod firstPeriod = goalPeriodService.createPeriodForGoal(savedGoal);
-            goalPeriodRepository.save(firstPeriod);
+            goalPeriodService.createPeriodForGoal(savedGoal);
         }
         
         return goalMapper.toResponse(savedGoal);
@@ -105,10 +105,10 @@ public class GoalServiceV1 implements GoalService {
     
     @Override
     public GoalResponse updateGoal(Long id, GoalRequest request, String userId) {
-        validateGoalRequest(request);
-        
         Goal goal = goalRepository.findByIdAndUserIdAndIsDeletedFalse(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException(id));
+        
+        validateGoalRequest(request, goal);
         
         // Validate parent goal exists if specified and different from current goal
         if (request.getParentGoalId() != null && !request.getParentGoalId().equals(goal.getUuid())) {
@@ -388,13 +388,43 @@ public class GoalServiceV1 implements GoalService {
         return goalMapper.toResponse(updatedGoal);
     }
     
-    private void validateGoalRequest(GoalRequest request) {
+    private void validateGoalRequest(GoalRequest request, Goal existingGoal) {
         if (request.getTitle() == null || request.getTitle().trim().isEmpty()) {
             throw new ValidationException("Goal title is required");
         }
         
         if (request.getPriority() == null) {
             throw new ValidationException("Goal priority is required");
+        }
+
+        boolean milestone = resolveMilestoneFlag(request, existingGoal);
+
+        if (milestone) {
+            GoalType effectiveGoalType =
+                request.getGoalType() != null ? request.getGoalType()
+                    : (existingGoal != null ? existingGoal.getGoalType() : null);
+            if (effectiveGoalType == null) {
+                throw new ValidationException("Goal type is required for milestone goals");
+            }
+            LocalDateTime effectiveStart =
+                request.getStartDate() != null ? request.getStartDate()
+                    : (existingGoal != null ? existingGoal.getStartDate() : null);
+            LocalDateTime effectiveEnd =
+                request.getTargetDate() != null ? request.getTargetDate()
+                    : (existingGoal != null ? existingGoal.getTargetDate() : null);
+            if (effectiveStart == null) {
+                throw new ValidationException("Start date is required for milestone goals");
+            }
+            if (effectiveEnd == null) {
+                throw new ValidationException("End date (target date) is required for milestone goals");
+            }
+            if (effectiveEnd.isBefore(effectiveStart)) {
+                throw new ValidationException("Target date cannot be before start date");
+            }
+            if (request.getCurrentValue() != null && request.getCurrentValue() < 0) {
+                throw new ValidationException("Goal current value must be non-negative");
+            }
+            return;
         }
         
         if (request.getMetric() == null) {
@@ -431,5 +461,16 @@ public class GoalServiceV1 implements GoalService {
                 throw new ValidationException("maximumSessionPeriod is strongly recommended when tracking progress limits");
             }
         }
+    }
+
+    /**
+     * Create: milestone only when request says so.
+     * Update: use request flag when present; otherwise keep existing goal's milestone flag.
+     */
+    private boolean resolveMilestoneFlag(GoalRequest request, Goal existingGoal) {
+        if (request.getIsMilestone() != null) {
+            return Boolean.TRUE.equals(request.getIsMilestone());
+        }
+        return existingGoal != null && Boolean.TRUE.equals(existingGoal.getIsMilestone());
     }
 }

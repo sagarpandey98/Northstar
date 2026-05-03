@@ -21,6 +21,8 @@ public interface GoalRepository extends JpaRepository<Goal, Long> {
     
     // Find by UUID and userId for security
     Optional<Goal> findByUuidAndUserIdAndIsDeletedFalse(String uuid, String userId);
+
+    Optional<Goal> findByUuidAndIsDeletedFalse(String uuid);
     
     // Find by parentGoalId
     List<Goal> findByParentGoalIdAndUserIdAndIsDeletedFalse(String parentGoalId, String userId);

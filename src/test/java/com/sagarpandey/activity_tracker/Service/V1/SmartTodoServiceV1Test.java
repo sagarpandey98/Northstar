@@ -188,10 +188,9 @@ class SmartTodoServiceV1Test {
         GoalResponse durationGoal = goal(50L, "duration-goal", "Focused Study", Goal.Priority.HIGH, flexibleWeekly(1));
         durationGoal.setMetric(Goal.Metric.DURATION);
         durationGoal.setMinimumTimeCommittedPeriod(210);
-        durationGoal.setMinimumTimeCommittedDaily(20);
+        durationGoal.setMinimumTimeCommittedPerActivity(20);
 
         GoalPeriod period = period("duration-goal", LocalDate.of(2026, 4, 20), LocalDate.of(2026, 4, 26));
-        period.setMetric(Goal.Metric.DURATION);
 
         ActivityResponse monday = activity(50L, "2026-04-21T07:00:00+05:30");
         monday.setEndTime(monday.getStartTime().plusMinutes(60));
@@ -240,8 +239,6 @@ class SmartTodoServiceV1Test {
     private GoalPeriod period(String goalUuid, LocalDate start, LocalDate end) {
         GoalPeriod period = new GoalPeriod();
         period.setParentGoalUuid(goalUuid);
-        period.setMetric(Goal.Metric.COUNT);
-        period.setTargetOperator(Goal.TargetOperator.GREATER_THAN);
         period.setPeriodStart(start);
         period.setPeriodEnd(end);
         period.setCurrentValue(0.0);

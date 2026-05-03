@@ -34,6 +34,32 @@ public interface GoalPeriodService {
      * Get active period for a goal on a specific date
      */
     Optional<GoalPeriod> getActivePeriodForGoal(String goalUuid, LocalDate date);
+
+    /**
+     * Get or proactively create the active period for a goal on a specific date.
+     */
+    GoalPeriod getOrCreateActivePeriod(Goal goal, LocalDate date);
+
+    /**
+     * Ensure period coverage through the supplied date, filling gaps when needed.
+     */
+    List<GoalPeriod> ensurePeriodsThroughDate(Goal goal, LocalDate throughDate);
+
+    /**
+     * Bulk create periods for a goal over a date range or count-limited horizon.
+     */
+    List<GoalPeriod> bulkCreatePeriods(
+        Goal goal,
+        LocalDate startDate,
+        LocalDate throughDate,
+        Integer maxPeriods,
+        boolean fillGaps
+    );
+
+    /**
+     * Fetch a specific period for a goal by period UUID.
+     */
+    Optional<GoalPeriod> getPeriodForGoal(String goalUuid, String periodUuid);
     
     /**
      * Update an existing period

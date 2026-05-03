@@ -656,9 +656,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
                 return (int) Math.ceil(activePeriod.getMinimumSessionDaily());
             }
 
-            Integer periodMinimum = activePeriod.getMinimumSessionPeriod() != null
-                ? activePeriod.getMinimumSessionPeriod()
-                : goal.getMinimumSessionPeriod();
+            Integer periodMinimum = goal.getMinimumSessionPeriod();
             if (periodMinimum != null && periodMinimum > 0) {
                 if (remainingActionableDays > 0) {
                     return Math.max(1, (int) Math.ceil(periodMinimum / (double) remainingActionableDays));
@@ -710,7 +708,6 @@ public class SmartTodoServiceV1 implements SmartTodoService {
     private Integer resolvePeriodTimeCommitment(GoalResponse goal, GoalPeriod activePeriod) {
         return firstPositiveInteger(
             goal != null ? goal.getMinimumTimeCommittedPeriod() : null,
-            activePeriod != null ? activePeriod.getMinimumSessionPeriod() : null,
             goal != null ? goal.getMinimumSessionPeriod() : null
         );
     }
@@ -720,7 +717,7 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             activePeriod != null && activePeriod.getMinimumSessionDaily() != null
                 ? Integer.valueOf((int) Math.ceil(activePeriod.getMinimumSessionDaily()))
                 : null,
-            goal != null ? goal.getMinimumTimeCommittedDaily() : null
+            goal != null ? goal.getMinimumTimeCommittedPerActivity() : null
         );
     }
 
@@ -755,7 +752,6 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             ScheduleSpec spec) {
         if (goal.getMetric() == Goal.Metric.DURATION) {
             return firstPositive(
-                activePeriod != null ? toDouble(activePeriod.getMinimumSessionPeriod()) : null,
                 toDouble(goal.getMinimumSessionPeriod()),
                 toDouble(goal.getMinimumTimeCommittedPeriod()),
                 goal.getTargetValue()
@@ -886,16 +882,25 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         
         GoalPeriod synthetic = new GoalPeriod();
         synthetic.setParentGoalUuid(goal.getUuid());
+        synthetic.setGoal(null);
         synthetic.setPeriodStart(periodStart);
         synthetic.setPeriodEnd(periodEnd);
-        synthetic.setMetric(goal.getMetric());
-        synthetic.setTargetOperator(goal.getTargetOperator());
-        synthetic.setMinimumSessionPeriod(goal.getMinimumSessionPeriod());
-        synthetic.setMaximumSessionPeriod(goal.getMaximumSessionPeriod());
-        synthetic.setAllowDoubleLogging(goal.getAllowDoubleLogging());
         synthetic.setScheduleSpec(goal.getScheduleSpec());
+        synthetic.setMinimumSessionDaily(calculateSyntheticMinimumSessionDaily(goal, periodStart, periodEnd));
         synthetic.setCurrentValue(0.0);
         return synthetic;
+    }
+
+    private Double calculateSyntheticMinimumSessionDaily(GoalResponse goal, LocalDate periodStart, LocalDate periodEnd) {
+        if (goal == null || goal.getMinimumSessionPeriod() == null || goal.getMinimumSessionPeriod() <= 0) {
+            return 0.0;
+        }
+        int actionableDays = ScheduleSpecEvaluator.countActionableDays(periodStart, periodEnd, goal.getScheduleSpec());
+        if (actionableDays <= 0) {
+            return 0.0;
+        }
+        double dailyMinimum = goal.getMinimumSessionPeriod() / (double) actionableDays;
+        return Math.round(dailyMinimum * 100.0) / 100.0;
     }
     
     private DayOfWeek resolveWeekStartsOn(ScheduleSpec spec) {
