@@ -2,7 +2,9 @@ package com.sagarpandey.activity_tracker.Service.Interface;
 
 import com.sagarpandey.activity_tracker.models.Goal;
 import com.sagarpandey.activity_tracker.models.GoalPeriod;
+import com.sagarpandey.activity_tracker.dtos.health.GoalPeriodHealthBreakdown;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -39,4 +41,5 @@ public interface GoalHealthService {
     Double calculatePeriodMomentumScore(GoalPeriod period);
     Double calculatePeriodProgressScore(GoalPeriod period);
     void updateGoalPeriodHealth(GoalPeriod period);
+    GoalPeriodHealthBreakdown getPeriodHealthBreakdown(GoalPeriod period, LocalDate evaluationDate);
 }

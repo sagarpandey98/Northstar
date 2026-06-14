@@ -44,8 +44,14 @@ public class SmartTodoResponse {
     // Time suggestions
     private Integer minimumSessionPeriod;  // Total minimum time for period
     private Integer minimumSessionDaily;   // Auto-calculated daily minimum
+    private Integer minimumTimeCommittedPerActivity; // User-configured minutes per activity/session
     private Integer suggestedTimeMinutes;
     private String lastCompletedDate;
+
+    // Scheduled clock time (HH:mm) derived from the schedule's TIME_WINDOW/TIME_OF_DAY rules
+    // for the target date. Null when the goal has no time-of-day rule (frontend then auto-places it).
+    private String scheduledStartTime;
+    private String scheduledEndTime;
     
     // Activity logging context
     private boolean requiresQuickLog;
@@ -154,11 +160,20 @@ public class SmartTodoResponse {
     public Integer getMinimumSessionDaily() { return minimumSessionDaily; }
     public void setMinimumSessionDaily(Integer minimumSessionDaily) { this.minimumSessionDaily = minimumSessionDaily; }
 
+    public Integer getMinimumTimeCommittedPerActivity() { return minimumTimeCommittedPerActivity; }
+    public void setMinimumTimeCommittedPerActivity(Integer minimumTimeCommittedPerActivity) { this.minimumTimeCommittedPerActivity = minimumTimeCommittedPerActivity; }
+
     public Integer getSuggestedTimeMinutes() { return suggestedTimeMinutes; }
     public void setSuggestedTimeMinutes(Integer suggestedTimeMinutes) { this.suggestedTimeMinutes = suggestedTimeMinutes; }
-    
+
     public String getLastCompletedDate() { return lastCompletedDate; }
     public void setLastCompletedDate(String lastCompletedDate) { this.lastCompletedDate = lastCompletedDate; }
+
+    public String getScheduledStartTime() { return scheduledStartTime; }
+    public void setScheduledStartTime(String scheduledStartTime) { this.scheduledStartTime = scheduledStartTime; }
+
+    public String getScheduledEndTime() { return scheduledEndTime; }
+    public void setScheduledEndTime(String scheduledEndTime) { this.scheduledEndTime = scheduledEndTime; }
     
     public boolean isRequiresQuickLog() { return requiresQuickLog; }
     public void setRequiresQuickLog(boolean requiresQuickLog) { this.requiresQuickLog = requiresQuickLog; }

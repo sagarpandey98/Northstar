@@ -4,6 +4,8 @@ import com.sagarpandey.activity_tracker.Repository.ActivityRepository;
 import com.sagarpandey.activity_tracker.Repository.GoalPeriodRepository;
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalPeriodExpectationService;
+import com.sagarpandey.activity_tracker.dtos.health.GoalDayHealthDetail;
+import com.sagarpandey.activity_tracker.dtos.health.GoalPeriodHealthBreakdown;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
 import com.sagarpandey.activity_tracker.models.Activity;
 import com.sagarpandey.activity_tracker.models.Goal;
@@ -23,6 +25,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -64,6 +67,43 @@ class GoalHealthServiceV2Test {
     }
 
     @Test
+    void periodHealthBreakdownIncludesDailyExpectedVsActualDetails() {
+        Goal goal = baseGoal("goal-breakdown", Goal.Priority.HIGH, 3, 3, weeklySpecificSpec("MONDAY", "WEDNESDAY", "FRIDAY"));
+        GoalPeriod period = period("period-breakdown", LocalDate.of(2026, 4, 27), LocalDate.of(2026, 5, 3), goal);
+
+        when(goalPeriodRepository.findByParentGoalUuid(goal.getUuid())).thenReturn(List.of(period));
+        when(activityRepository.findGoalActivitiesOverlappingPeriod(eq(goal.getId()), eq(goal.getUserId()), any(), any()))
+            .thenReturn(List.of(
+                countActivity(goal.getId(), "2026-04-27T09:00:00Z"),
+                countActivity(goal.getId(), "2026-04-27T12:00:00Z"),
+                countActivity(goal.getId(), "2026-04-27T18:00:00Z")
+            ));
+
+        GoalPeriodHealthBreakdown breakdown = goalHealthService.getPeriodHealthBreakdown(period, period.getPeriodEnd());
+
+        assertEquals(goal.getUuid(), breakdown.getGoalUuid());
+        assertEquals(period.getUuid(), breakdown.getPeriodUuid());
+        assertEquals("activities", breakdown.getUnitLabel());
+        assertEquals(33.33, breakdown.getConsistencyScore(), 0.01);
+        assertEquals(33.33, breakdown.getProgressScore(), 0.01);
+        assertEquals(100.0, breakdown.getMomentumScore(), 0.01);
+        assertNotNull(breakdown.getMomentumBreakdown());
+        assertEquals("FIRST_PERIOD", breakdown.getMomentumBreakdown().getTrend());
+
+        GoalDayHealthDetail monday = detailForDate(breakdown, LocalDate.of(2026, 4, 27));
+        GoalDayHealthDetail wednesday = detailForDate(breakdown, LocalDate.of(2026, 4, 29));
+
+        assertEquals(1.0, monday.getExpectedMinimumUnits(), 0.01);
+        assertEquals(3.0, monday.getActualUnits(), 0.01);
+        assertEquals(1.0, monday.getConsistencyFulfilledUnits(), 0.01);
+        assertEquals(100.0, monday.getConsistencyScore(), 0.01);
+
+        assertEquals(1.0, wednesday.getExpectedMinimumUnits(), 0.01);
+        assertEquals(0.0, wednesday.getActualUnits(), 0.01);
+        assertEquals(0.0, wednesday.getConsistencyScore(), 0.01);
+    }
+
+    @Test
     void momentumComparesAgainstAverageOfPreviousTwoPeriods() {
         Goal goal = baseGoal("goal-2", Goal.Priority.HIGH, 7, 7, flexibleSpec(ScheduleSpec.ScheduleType.WEEKLY));
         GoalPeriod first = period("period-1", LocalDate.of(2026, 4, 6), LocalDate.of(2026, 4, 12), goal);
@@ -89,6 +129,11 @@ class GoalHealthServiceV2Test {
             ));
 
         assertEquals(36.36, goalHealthService.calculatePeriodMomentumScore(third), 0.01);
+
+        GoalPeriodHealthBreakdown breakdown = goalHealthService.getPeriodHealthBreakdown(third, third.getPeriodEnd());
+        assertEquals(36.36, breakdown.getMomentumScore(), 0.01);
+        assertEquals("DECLINING", breakdown.getMomentumBreakdown().getTrend());
+        assertEquals(2, breakdown.getMomentumBreakdown().getPeriodsCompared());
     }
 
     @Test
@@ -171,5 +216,12 @@ class GoalHealthServiceV2Test {
         activity.setEndTime(start.plusMinutes(30));
         activity.setUserId("user-1");
         return activity;
+    }
+
+    private GoalDayHealthDetail detailForDate(GoalPeriodHealthBreakdown breakdown, LocalDate date) {
+        return breakdown.getDailyDetails().stream()
+            .filter(detail -> date.equals(detail.getDate()))
+            .findFirst()
+            .orElseThrow();
     }
 }

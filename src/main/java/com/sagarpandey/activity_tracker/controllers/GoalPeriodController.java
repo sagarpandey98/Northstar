@@ -3,6 +3,7 @@ package com.sagarpandey.activity_tracker.controllers;
 import com.sagarpandey.activity_tracker.Exceptions.ValidationException;
 import com.sagarpandey.activity_tracker.Mapper.GoalPeriodMapper;
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
+import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalPeriodService;
 import com.sagarpandey.activity_tracker.dtos.GoalPeriodBulkCreateRequest;
 import com.sagarpandey.activity_tracker.dtos.GoalPeriodCreateRequest;
@@ -35,14 +36,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class GoalPeriodController {
 
     private final GoalPeriodService goalPeriodService;
+    private final GoalHealthService goalHealthService;
     private final GoalRepository goalRepository;
     private final GoalPeriodMapper goalPeriodMapper;
 
     public GoalPeriodController(
             GoalPeriodService goalPeriodService,
+            GoalHealthService goalHealthService,
             GoalRepository goalRepository,
             GoalPeriodMapper goalPeriodMapper) {
         this.goalPeriodService = goalPeriodService;
+        this.goalHealthService = goalHealthService;
         this.goalRepository = goalRepository;
         this.goalPeriodMapper = goalPeriodMapper;
     }
@@ -108,6 +112,25 @@ public class GoalPeriodController {
             .orElseThrow(() -> new ValidationException("Goal period not found"));
         return ResponseEntity.ok(
             new ResponseWrapper("Goal period retrieved successfully", "success", goalPeriodMapper.toResponse(period))
+        );
+    }
+
+    @GetMapping("/{periodUuid}/health-breakdown")
+    public ResponseEntity<ResponseWrapper> getGoalPeriodHealthBreakdown(
+            @PathVariable String goalUuid,
+            @PathVariable String periodUuid,
+            @RequestParam(required = false) LocalDate evaluationDate,
+            Authentication authentication) {
+        String userId = extractUserIdFromJwt(authentication);
+        Goal goal = resolveGoal(goalUuid, userId);
+        GoalPeriod period = goalPeriodService.getPeriodForGoal(goal.getUuid(), periodUuid)
+            .orElseThrow(() -> new ValidationException("Goal period not found"));
+        return ResponseEntity.ok(
+            new ResponseWrapper(
+                "Goal period health breakdown retrieved successfully",
+                "success",
+                goalHealthService.getPeriodHealthBreakdown(period, evaluationDate)
+            )
         );
     }
 
@@ -177,6 +200,44 @@ public class GoalPeriodController {
         );
     }
 
+    @PostMapping("/health/recalculate")
+    public ResponseEntity<ResponseWrapper> recalculateGoalPeriodsHealth(
+            @PathVariable String goalUuid,
+            @RequestParam(required = false) LocalDate throughDate,
+            @RequestParam(defaultValue = "false") boolean reconcile,
+            Authentication authentication) {
+        String userId = extractUserIdFromJwt(authentication);
+        Goal goal = resolveGoal(goalUuid, userId);
+        if (reconcile) {
+            goalPeriodService.ensurePeriodsThroughDate(goal, throughDate != null ? throughDate : LocalDate.now());
+        }
+        goalHealthService.updateGoalHealth(goal);
+        List<GoalPeriodResponse> periods = goalPeriodMapper.toResponseList(
+            goalPeriodService.getPeriodsForGoal(goal.getUuid())
+        );
+        return ResponseEntity.ok(
+            new ResponseWrapper("Goal period health recalculated successfully", "success", periods)
+        );
+    }
+
+    @PostMapping("/{periodUuid}/health/recalculate")
+    public ResponseEntity<ResponseWrapper> recalculateGoalPeriodHealth(
+            @PathVariable String goalUuid,
+            @PathVariable String periodUuid,
+            Authentication authentication) {
+        String userId = extractUserIdFromJwt(authentication);
+        Goal goal = resolveGoal(goalUuid, userId);
+        GoalPeriod period = goalPeriodService.getPeriodForGoal(goal.getUuid(), periodUuid)
+            .orElseThrow(() -> new ValidationException("Goal period not found"));
+        goalHealthService.updateGoalPeriodHealth(period);
+        goalHealthService.updateGoalHealth(goal);
+        GoalPeriod refreshed = goalPeriodService.getPeriodForGoal(goal.getUuid(), periodUuid)
+            .orElse(period);
+        return ResponseEntity.ok(
+            new ResponseWrapper("Goal period health recalculated successfully", "success", goalPeriodMapper.toResponse(refreshed))
+        );
+    }
+
     @PutMapping("/{periodUuid}")
     public ResponseEntity<ResponseWrapper> updateGoalPeriod(
             @PathVariable String goalUuid,
@@ -202,6 +263,7 @@ public class GoalPeriodController {
         }
 
         GoalPeriod updated = goalPeriodService.updatePeriod(period);
+        goalHealthService.updateGoalHealth(goal);
         return ResponseEntity.ok(
             new ResponseWrapper("Goal period updated successfully", "success", goalPeriodMapper.toResponse(updated))
         );

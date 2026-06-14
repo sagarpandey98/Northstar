@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SmartTodoServiceV1Test {
@@ -206,6 +207,83 @@ class SmartTodoServiceV1Test {
         assertEquals(90, todo.getTargetProgress());
     }
 
+    @Test
+    void getSmartTodosForDate_honorsConfiguredTimePerActivityAsSessionFloor() {
+        LocalDate targetDate = LocalDate.of(2026, 4, 24);
+
+        GoalResponse goal = goal(60L, "floor-goal", "Guitar Practice", Goal.Priority.MEDIUM, flexibleWeekly(1));
+        goal.setMetric(Goal.Metric.DURATION);
+        goal.setMinimumSessionPeriod(70);            // spreads to a small daily amount
+        goal.setMinimumTimeCommittedPerActivity(45); // user wants 45-minute sessions
+
+        GoalPeriod period = period("floor-goal", targetDate.minusDays(3), targetDate.plusDays(3));
+        period.setMinimumSessionDaily(10.0);          // would otherwise shadow the per-activity time
+
+        SmartTodoServiceV1 service = service(List.of(goal), List.of(), List.of(period));
+        SmartTodoListResponse result = service.getSmartTodosForDate(USER_ID, targetDate);
+
+        assertEquals(1, result.getItems().size());
+        SmartTodoResponse todo = result.getItems().get(0);
+        assertEquals(45, todo.getMinimumTimeCommittedPerActivity());
+        assertTrue(
+            todo.getSuggestedTimeMinutes() >= 45,
+            "configured per-activity time should be honored as a session floor, got "
+                + todo.getSuggestedTimeMinutes()
+        );
+    }
+
+    @Test
+    void getSmartTodosForDate_cappsSuggestedSessionToBelievableLength() {
+        LocalDate targetDate = LocalDate.of(2026, 4, 24);
+
+        GoalResponse goal = goal(63L, "cap-goal", "Thesis", Goal.Priority.HIGH, flexibleWeekly(1));
+        goal.setMetric(Goal.Metric.DURATION);
+        goal.setMinimumTimeCommittedPeriod(3000); // huge backlog with little time left in the period
+
+        GoalPeriod period = period("cap-goal", targetDate.minusDays(20), targetDate);
+
+        SmartTodoServiceV1 service = service(List.of(goal), List.of(), List.of(period));
+        SmartTodoListResponse result = service.getSmartTodosForDate(USER_ID, targetDate);
+
+        assertEquals(1, result.getItems().size());
+        SmartTodoResponse todo = result.getItems().get(0);
+        assertTrue(
+            todo.getSuggestedTimeMinutes() <= 180,
+            "a single suggested session should stay believable, got " + todo.getSuggestedTimeMinutes()
+        );
+        // The real outstanding amount is still surfaced rather than crammed into the session block.
+        assertTrue(todo.getRemainingPeriodTarget() > 180);
+    }
+
+    @Test
+    void getSmartTodosForDate_surfacesScheduledClockTimeFromTimeWindow() {
+        LocalDate targetDate = LocalDate.of(2026, 4, 24);
+
+        GoalResponse windowed = goal(61L, "window-goal", "Morning Pages", Goal.Priority.HIGH, weeklyWithTimeWindow("06:00", "07:00"));
+        GoalResponse flexible = goal(62L, "flex-goal", "Read", Goal.Priority.LOW, flexibleWeekly(1));
+
+        GoalPeriod windowedPeriod = period("window-goal", targetDate.minusDays(3), targetDate.plusDays(3));
+        GoalPeriod flexiblePeriod = period("flex-goal", targetDate.minusDays(3), targetDate.plusDays(3));
+
+        SmartTodoServiceV1 service = service(List.of(windowed, flexible), List.of(), List.of(windowedPeriod, flexiblePeriod));
+        SmartTodoListResponse result = service.getSmartTodosForDate(USER_ID, targetDate);
+
+        SmartTodoResponse windowTodo = result.getItems().stream()
+            .filter(todo -> "Morning Pages".equals(todo.getTitle()))
+            .findFirst()
+            .orElseThrow();
+        SmartTodoResponse flexTodo = result.getItems().stream()
+            .filter(todo -> "Read".equals(todo.getTitle()))
+            .findFirst()
+            .orElseThrow();
+
+        assertEquals("06:00", windowTodo.getScheduledStartTime());
+        assertEquals("07:00", windowTodo.getScheduledEndTime());
+        // Flexible goals (no time-of-day rule) leave the clock null so the UI can auto-place them.
+        assertNull(flexTodo.getScheduledStartTime());
+        assertNull(flexTodo.getScheduledEndTime());
+    }
+
     private SmartTodoServiceV1 service(
             List<GoalResponse> goals,
             List<ActivityResponse> activities,
@@ -265,6 +343,19 @@ class SmartTodoServiceV1Test {
 
     private ScheduleSpec flexibleWeekly(int minCheckins) {
         return baseWeekly(minCheckins);
+    }
+
+    private ScheduleSpec weeklyWithTimeWindow(String start, String end) {
+        ScheduleSpec spec = baseWeekly(1);
+        ScheduleSpec.Rule rule = new ScheduleSpec.Rule();
+        rule.setScope(ScheduleSpec.RuleScope.TIME_WINDOW);
+        rule.setMode(ScheduleSpec.RuleMode.FLEXIBLE);
+        ScheduleSpec.TimeWindow window = new ScheduleSpec.TimeWindow();
+        window.setStart(start);
+        window.setEnd(end);
+        rule.setWindows(List.of(window));
+        spec.setRules(List.of(rule));
+        return spec;
     }
 
     private ScheduleSpec dailySchedule() {

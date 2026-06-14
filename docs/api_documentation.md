@@ -152,6 +152,44 @@ Example change:
 
 The response payload now also returns `minimumTimeCommittedPerActivity` with the same meaning.
 
+## 4.2 Goal Period Health Breakdown API
+
+Use this endpoint when the frontend needs to explain a period health score:
+
+```text
+GET /api/v1/goals/{goalIdOrUuid}/periods/{periodUuid}/health-breakdown
+GET /api/v1/goals/{goalIdOrUuid}/periods/{periodUuid}/health-breakdown?evaluationDate=YYYY-MM-DD
+```
+
+Response `data` includes:
+
+- `consistencyScore`
+- `momentumScore`
+- `progressScore`
+- `healthScore`
+- `healthStatus`
+- `unitLabel`
+- `expectedMinimumUnitsToDate`
+- `expectedTargetUnitsToDate`
+- `actualUnitsToDate`
+- `dailyDetails`
+- `momentumBreakdown`
+
+`unitLabel` tells the frontend how to display health units:
+
+- `activities` for `COUNT`
+- `minutes` for `DURATION`
+
+After CSV import or direct admin data changes, use:
+
+```text
+POST /api/v1/goals/{goalIdOrUuid}/periods/health/recalculate
+POST /api/v1/goals/{goalIdOrUuid}/periods/health/recalculate?reconcile=true&throughDate=YYYY-MM-DD
+POST /api/v1/goals/{goalIdOrUuid}/periods/{periodUuid}/health/recalculate
+```
+
+These endpoints refresh period health and keep goal/parent rollups aligned.
+
 ## 5. Smart Todo API
 
 Smart Todo V1.1 now returns a wrapper object instead of a bare array.

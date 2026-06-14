@@ -227,15 +227,123 @@ Future or untracked periods do not consume misses.
 4. parent health is a weighted child rollup
 5. period and goal `healthStatus` are updated from the real health engine instead of placeholder math
 
+## Period Health Breakdown API
+
+The health engine now exposes the same internals it uses for calculation through a period-level breakdown endpoint:
+
+```text
+GET /api/v1/goals/{goalIdOrUuid}/periods/{periodUuid}/health-breakdown
+GET /api/v1/goals/{goalIdOrUuid}/periods/{periodUuid}/health-breakdown?evaluationDate=YYYY-MM-DD
+```
+
+The response includes:
+
+- goal and period identifiers
+- period start/end and evaluation date
+- metric and `unitLabel`
+- consistency, progress, momentum, and health scores
+- health status
+- score weights
+- expected minimum/target units for the period
+- expected minimum/target units to date
+- actual units for the period and to date
+- daily expected-vs-actual details
+- momentum trend metadata
+
+### Unit Semantics
+
+Health math uses generic `units`.
+
+For `COUNT` goals:
+
+- `1 unit = 1 activity/check-in`
+
+For `DURATION` goals:
+
+- `1 unit = 1 minute`
+
+This keeps the formulas identical across goal types while allowing the frontend to display the correct label.
+
+### Daily Detail Semantics
+
+Each daily detail row contains:
+
+- `date`
+- `actionable`
+- `countedInScore`
+- `expectedMinimumUnits`
+- `expectedTargetUnits`
+- `actualUnits`
+- `consistencyFulfilledUnits`
+- `progressFulfilledUnits`
+- `consistencyScore`
+- `progressScore`
+
+Daily fulfillment is capped:
+
+```text
+consistencyFulfilledUnits = min(actualUnits, expectedMinimumUnits)
+progressFulfilledUnits = min(actualUnits, expectedTargetUnits)
+```
+
+This is what prevents a user from bunching all work into one strict schedule day and receiving full consistency.
+
+### Momentum Trend Semantics
+
+Momentum still compares the current period composite against the previous one or two periods, but the API now exposes the comparison:
+
+- `currentCompositeScore`
+- `baselineCompositeScore`
+- `deltaFromBaseline`
+- `periodsCompared`
+- `trend`
+- `explanation`
+
+Valid trends:
+
+- `FIRST_PERIOD`
+- `NO_BASELINE`
+- `IMPROVING`
+- `DECLINING`
+- `RECOVERING`
+- `FLAT_ZERO`
+- `UNTRACKED`
+
+## Import And Recalculation Workflow
+
+CSV imports and direct database writes do not automatically run Java health calculation. After importing activities or periods, call:
+
+```text
+POST /api/v1/goals/{goalIdOrUuid}/periods/health/recalculate
+```
+
+Optional reconciliation before recalculation:
+
+```text
+POST /api/v1/goals/{goalIdOrUuid}/periods/health/recalculate?reconcile=true&throughDate=YYYY-MM-DD
+```
+
+For one specific period:
+
+```text
+POST /api/v1/goals/{goalIdOrUuid}/periods/{periodUuid}/health/recalculate
+```
+
+The goal-level recalculation path still rolls health up to parent goals through the health service.
+
 ## Files Changed
 
 - `src/main/java/com/sagarpandey/activity_tracker/Service/Interface/GoalPeriodExpectationService.java`
 - `src/main/java/com/sagarpandey/activity_tracker/Service/V1/GoalPeriodExpectationServiceV1.java`
 - `src/main/java/com/sagarpandey/activity_tracker/dtos/health/GoalDayExpectation.java`
 - `src/main/java/com/sagarpandey/activity_tracker/dtos/health/GoalPeriodExpectation.java`
+- `src/main/java/com/sagarpandey/activity_tracker/dtos/health/GoalDayHealthDetail.java`
+- `src/main/java/com/sagarpandey/activity_tracker/dtos/health/GoalPeriodHealthBreakdown.java`
+- `src/main/java/com/sagarpandey/activity_tracker/dtos/health/MomentumBreakdown.java`
 - `src/main/java/com/sagarpandey/activity_tracker/Service/V1/GoalHealthServiceV2.java`
 - `src/main/java/com/sagarpandey/activity_tracker/Repository/ActivityRepository.java`
 - `src/main/java/com/sagarpandey/activity_tracker/Service/V1/GoalPeriodServiceV1.java`
+- `src/main/java/com/sagarpandey/activity_tracker/controllers/GoalPeriodController.java`
 
 ## Tests Added
 

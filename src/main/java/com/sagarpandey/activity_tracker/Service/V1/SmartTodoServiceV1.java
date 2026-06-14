@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.time.format.TextStyle;
@@ -50,6 +51,10 @@ public class SmartTodoServiceV1 implements SmartTodoService {
 
     private static final Logger log = LoggerFactory.getLogger(SmartTodoServiceV1.class);
     private static final double EPSILON = 0.0001;
+    // A single suggested session should stay believable: catch-up backlog is still surfaced via
+    // remainingTodayTarget/remainingPeriodTarget, but the suggested block length is capped so a
+    // large deficit never renders as a multi-hour task. An explicit per-activity time overrides this.
+    private static final int DEFAULT_SESSION_CAP_MINUTES = 180;
 
     private final GoalService goalService;
     private final ActivityServiceInterface activityService;
@@ -335,6 +340,10 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         todo.setScheduleType(spec != null && spec.getScheduleType() != null ? spec.getScheduleType().name() : "UNSCHEDULED");
         todo.setScheduleDetails(describeSchedulePath(spec, targetDate));
         todo.setScheduleLabel(buildScheduleLabel(spec, targetDate));
+        ClockTime scheduledClock = resolveScheduledClock(spec, targetDate);
+        todo.setScheduledStartTime(scheduledClock != null ? scheduledClock.start : null);
+        todo.setScheduledEndTime(scheduledClock != null ? scheduledClock.end : null);
+        todo.setMinimumTimeCommittedPerActivity(goal.getMinimumTimeCommittedPerActivity());
         todo.setCurrentProgress(todayProgress);
         todo.setTargetProgress(todayTarget);
         todo.setProgressPercentage(calculatePercentage(todayProgress, todayTarget));
@@ -635,6 +644,39 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             int periodDurationProgressMinutes,
             int remainingActionableDays,
             int todayTarget) {
+        int rawSuggestedTime = computeRawSuggestedTime(
+            goal,
+            activePeriod,
+            periodDurationProgressMinutes,
+            remainingActionableDays,
+            todayTarget
+        );
+        return applySessionBounds(goal, rawSuggestedTime);
+    }
+
+    /**
+     * Keeps the suggested per-session block believable and faithful to the user's intent:
+     * - caps a large catch-up/period-spread value so a deficit never renders as a multi-hour block
+     *   (the true outstanding amount still rides on remainingTodayTarget/remainingPeriodTarget);
+     * - then honors the user's configured "time per activity" as a hard per-session floor so an
+     *   explicit session length always comes through (and overrides the cap when larger).
+     */
+    private int applySessionBounds(GoalResponse goal, int rawSuggestedTime) {
+        int result = Math.max(0, rawSuggestedTime);
+        result = Math.min(result, DEFAULT_SESSION_CAP_MINUTES);
+        Integer perActivity = goal != null ? goal.getMinimumTimeCommittedPerActivity() : null;
+        if (perActivity != null && perActivity > 0) {
+            result = Math.max(result, perActivity);
+        }
+        return Math.max(1, result);
+    }
+
+    private int computeRawSuggestedTime(
+            GoalResponse goal,
+            GoalPeriod activePeriod,
+            int periodDurationProgressMinutes,
+            int remainingActionableDays,
+            int todayTarget) {
         Integer commitmentBasedTime = calculateTodayTimeCommitment(
             goal,
             activePeriod,
@@ -693,9 +735,11 @@ public class SmartTodoServiceV1 implements SmartTodoService {
         Integer periodCommitment = resolvePeriodTimeCommitment(goal, activePeriod);
         if (periodCommitment != null && periodCommitment > 0) {
             int remainingCommitment = Math.max(0, periodCommitment - Math.max(0, periodDurationProgressMinutes));
-            int actionableDays = Math.max(1, remainingActionableDays);
-            int commitmentPerDay = remainingCommitment > 0
-                ? Math.max(1, (int) Math.ceil(remainingCommitment / (double) actionableDays))
+            // Only spread the remaining commitment when there is at least one actionable day left.
+            // If the target date is itself non-actionable (e.g. an off day surfaced because progress
+            // exists), do NOT cram the whole period into one day — fall back to the daily floor.
+            int commitmentPerDay = (remainingCommitment > 0 && remainingActionableDays > 0)
+                ? Math.max(1, (int) Math.ceil(remainingCommitment / (double) remainingActionableDays))
                 : 0;
             if (dailyFloor != null && dailyFloor > 0) {
                 return commitmentPerDay > 0 ? Math.max(commitmentPerDay, dailyFloor) : dailyFloor;
@@ -1252,6 +1296,118 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             case TIME_OF_DAY -> rule.getValues() != null && !rule.getValues().isEmpty();
             case TIME_WINDOW -> rule.getWindows() != null && !rule.getWindows().isEmpty();
         };
+    }
+
+    /**
+     * Resolves the clock start (and end, for a window) the user configured for {@code date} by
+     * walking the same matched-rule path used for the schedule label, descending into nested rules
+     * so a TIME_WINDOW/TIME_OF_DAY under a DAY_OF_WEEK/DAY_OF_MONTH parent is only surfaced on a
+     * matching day. Returns null when the schedule has no time-of-day rule for the date, leaving the
+     * frontend free to auto-place the task.
+     */
+    private ClockTime resolveScheduledClock(ScheduleSpec spec, LocalDate date) {
+        if (spec == null || spec.getRules() == null || spec.getRules().isEmpty() || date == null) {
+            return null;
+        }
+        for (ScheduleSpec.Rule rule : spec.getRules()) {
+            ClockTime clock = findClockInRule(spec, rule, date);
+            if (clock != null) {
+                return clock;
+            }
+        }
+        return null;
+    }
+
+    private ClockTime findClockInRule(ScheduleSpec spec, ScheduleSpec.Rule rule, LocalDate date) {
+        if (rule == null || rule.getScope() == null || !matchesRuleForDate(spec, rule, date)) {
+            return null;
+        }
+        // Prefer the most specific (deepest) time rule for the date.
+        if (rule.getRules() != null && !rule.getRules().isEmpty()) {
+            for (ScheduleSpec.Rule child : rule.getRules()) {
+                ClockTime childClock = findClockInRule(spec, child, date);
+                if (childClock != null) {
+                    return childClock;
+                }
+            }
+        }
+        if (rule.getScope() == ScheduleSpec.RuleScope.TIME_WINDOW) {
+            return earliestWindow(rule.getWindows());
+        }
+        if (rule.getScope() == ScheduleSpec.RuleScope.TIME_OF_DAY) {
+            String start = earliestTimeOfDay(rule.getValues());
+            return start != null ? new ClockTime(start, null) : null;
+        }
+        return null;
+    }
+
+    private ClockTime earliestWindow(List<ScheduleSpec.TimeWindow> windows) {
+        if (windows == null || windows.isEmpty()) {
+            return null;
+        }
+        ScheduleSpec.TimeWindow earliest = null;
+        LocalTime earliestStart = null;
+        for (ScheduleSpec.TimeWindow window : windows) {
+            if (window == null) {
+                continue;
+            }
+            String start = normalizeClock(window.getStart());
+            if (start == null) {
+                continue;
+            }
+            LocalTime parsed = LocalTime.parse(start);
+            if (earliestStart == null || parsed.isBefore(earliestStart)) {
+                earliestStart = parsed;
+                earliest = window;
+            }
+        }
+        if (earliest == null) {
+            return null;
+        }
+        return new ClockTime(normalizeClock(earliest.getStart()), normalizeClock(earliest.getEnd()));
+    }
+
+    private String earliestTimeOfDay(List<Object> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        LocalTime earliest = null;
+        for (Object value : values) {
+            String normalized = normalizeClock(value);
+            if (normalized == null) {
+                continue;
+            }
+            LocalTime parsed = LocalTime.parse(normalized);
+            if (earliest == null || parsed.isBefore(earliest)) {
+                earliest = parsed;
+            }
+        }
+        return earliest != null ? earliest.truncatedTo(ChronoUnit.MINUTES).toString() : null;
+    }
+
+    private String normalizeClock(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.toString().trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalTime.parse(text).truncatedTo(ChronoUnit.MINUTES).toString();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static final class ClockTime {
+        private final String start;
+        private final String end;
+
+        private ClockTime(String start, String end) {
+            this.start = start;
+            this.end = end;
+        }
     }
 
     private String formatRuleLabel(ScheduleSpec spec, ScheduleSpec.Rule rule, LocalDate date) {

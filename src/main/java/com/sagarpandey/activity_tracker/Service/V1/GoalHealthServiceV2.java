@@ -5,8 +5,11 @@ import com.sagarpandey.activity_tracker.Repository.GoalPeriodRepository;
 import com.sagarpandey.activity_tracker.Repository.GoalRepository;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalHealthService;
 import com.sagarpandey.activity_tracker.Service.Interface.GoalPeriodExpectationService;
+import com.sagarpandey.activity_tracker.dtos.health.GoalDayHealthDetail;
 import com.sagarpandey.activity_tracker.dtos.health.GoalDayExpectation;
+import com.sagarpandey.activity_tracker.dtos.health.GoalPeriodHealthBreakdown;
 import com.sagarpandey.activity_tracker.dtos.health.GoalPeriodExpectation;
+import com.sagarpandey.activity_tracker.dtos.health.MomentumBreakdown;
 import com.sagarpandey.activity_tracker.enums.HealthStatus;
 import com.sagarpandey.activity_tracker.models.Activity;
 import com.sagarpandey.activity_tracker.models.Goal;
@@ -130,6 +133,13 @@ public class GoalHealthServiceV2 implements GoalHealthService {
     }
 
     @Override
+    public GoalPeriodHealthBreakdown getPeriodHealthBreakdown(GoalPeriod period, LocalDate evaluationDate) {
+        Goal parentGoal = resolveParentGoal(period);
+        PeriodSnapshot snapshot = computeSnapshotForPeriod(parentGoal, period, evaluationDate);
+        return buildPeriodHealthBreakdown(parentGoal, snapshot);
+    }
+
+    @Override
     public Map<String, Object> getHealthBreakdown(Goal goal) {
         Map<String, Object> breakdown = new HashMap<>();
         breakdown.put("goalUuid", goal.getUuid());
@@ -235,6 +245,10 @@ public class GoalHealthServiceV2 implements GoalHealthService {
     }
 
     private List<PeriodSnapshot> computePeriodSnapshots(Goal goal, List<GoalPeriod> periods) {
+        return computePeriodSnapshots(goal, periods, null);
+    }
+
+    private List<PeriodSnapshot> computePeriodSnapshots(Goal goal, List<GoalPeriod> periods, LocalDate evaluationDateOverride) {
         if (goal == null || periods == null || periods.isEmpty()) {
             return List.of();
         }
@@ -247,7 +261,7 @@ public class GoalHealthServiceV2 implements GoalHealthService {
             GoalPeriodExpectation expectation = goalPeriodExpectationService.buildExpectation(
                 goal,
                 period,
-                resolveEvaluationDate(period, zoneId)
+                evaluationDateOverride != null ? evaluationDateOverride : resolveEvaluationDate(period, zoneId)
             );
             Map<LocalDate, Double> actualUnitsByDate = aggregateActualUnitsByDate(goal, period, zoneId, goalActivities);
             double actualUnitsToDate = calculateActualUnitsToDate(actualUnitsByDate, expectation.getEvaluationDate());
@@ -264,8 +278,8 @@ public class GoalHealthServiceV2 implements GoalHealthService {
                 actualUnitsByDate,
                 GoalDayExpectation::getExpectedTargetUnits
             );
-            Double momentum = calculateMomentumScore(consistency, progress, snapshots);
-            Double health = calculateOverallHealthScore(goal, consistency, momentum, progress);
+            MomentumAnalysis momentum = analyzeMomentum(consistency, progress, snapshots);
+            Double health = calculateOverallHealthScore(goal, consistency, momentum.score(), progress);
             HealthStatus status = derivePeriodHealthStatus(expectation, consistency, progress, health, actualUnitsToDate);
 
             double currentValue = round(actualUnitsByDate.values().stream().mapToDouble(Double::doubleValue).sum());
@@ -277,9 +291,10 @@ public class GoalHealthServiceV2 implements GoalHealthService {
                 actualUnitsToDate,
                 consistency,
                 progress,
-                momentum,
+                momentum.score(),
                 health,
-                status
+                status,
+                momentum
             ));
         }
 
@@ -287,6 +302,10 @@ public class GoalHealthServiceV2 implements GoalHealthService {
     }
 
     private PeriodSnapshot computeSnapshotForPeriod(Goal goal, GoalPeriod targetPeriod) {
+        return computeSnapshotForPeriod(goal, targetPeriod, null);
+    }
+
+    private PeriodSnapshot computeSnapshotForPeriod(Goal goal, GoalPeriod targetPeriod, LocalDate evaluationDateOverride) {
         if (goal == null || targetPeriod == null) {
             return null;
         }
@@ -294,7 +313,7 @@ public class GoalHealthServiceV2 implements GoalHealthService {
         if (periods.isEmpty()) {
             return null;
         }
-        return computePeriodSnapshots(goal, periods).stream()
+        return computePeriodSnapshots(goal, periods, evaluationDateOverride).stream()
             .filter(snapshot -> snapshot.period().getUuid().equals(targetPeriod.getUuid()))
             .findFirst()
             .orElse(null);
@@ -429,12 +448,19 @@ public class GoalHealthServiceV2 implements GoalHealthService {
             Double consistency,
             Double progress,
             List<PeriodSnapshot> previousSnapshots) {
+        return analyzeMomentum(consistency, progress, previousSnapshots).score();
+    }
+
+    private MomentumAnalysis analyzeMomentum(
+            Double consistency,
+            Double progress,
+            List<PeriodSnapshot> previousSnapshots) {
         Double currentComposite = averageOf(consistency, progress);
         if (currentComposite == null) {
-            return null;
+            return new MomentumAnalysis(null, null, null, 0, "UNTRACKED", "No consistency or progress score is available yet.");
         }
         if (previousSnapshots == null || previousSnapshots.isEmpty()) {
-            return 100.0;
+            return new MomentumAnalysis(100.0, currentComposite, null, 0, "FIRST_PERIOD", "First period is treated as full momentum.");
         }
 
         List<Double> historicalComposites = previousSnapshots.stream()
@@ -442,19 +468,22 @@ public class GoalHealthServiceV2 implements GoalHealthService {
             .filter(Objects::nonNull)
             .collect(Collectors.toList());
         if (historicalComposites.isEmpty()) {
-            return 100.0;
+            return new MomentumAnalysis(100.0, currentComposite, null, 0, "NO_BASELINE", "No comparable historical periods are available.");
         }
 
         int startIndex = Math.max(0, historicalComposites.size() - 2);
         List<Double> baselineWindow = historicalComposites.subList(startIndex, historicalComposites.size());
         double baseline = baselineWindow.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
         if (baseline <= 0.0) {
-            return currentComposite > 0.0 ? 100.0 : 0.0;
+            Double score = currentComposite > 0.0 ? 100.0 : 0.0;
+            String trend = currentComposite > 0.0 ? "RECOVERING" : "FLAT_ZERO";
+            return new MomentumAnalysis(score, currentComposite, round(baseline), baselineWindow.size(), trend, "Historical baseline was zero.");
         }
         if (currentComposite >= baseline) {
-            return 100.0;
+            return new MomentumAnalysis(100.0, currentComposite, round(baseline), baselineWindow.size(), "IMPROVING", "Current period is at or above the recent baseline.");
         }
-        return round(Math.min(100.0, (currentComposite / baseline) * 100.0));
+        double score = round(Math.min(100.0, (currentComposite / baseline) * 100.0));
+        return new MomentumAnalysis(score, currentComposite, round(baseline), baselineWindow.size(), "DECLINING", "Current period is below the recent baseline.");
     }
 
     private Double calculateOverallHealthScore(
@@ -532,6 +561,107 @@ public class GoalHealthServiceV2 implements GoalHealthService {
         period.setProgressPercentage(snapshot.progressScore());
         period.setHealthScore(snapshot.healthScore());
         period.setHealthStatus(snapshot.healthStatus());
+    }
+
+    private GoalPeriodHealthBreakdown buildPeriodHealthBreakdown(Goal goal, PeriodSnapshot snapshot) {
+        GoalPeriodHealthBreakdown breakdown = new GoalPeriodHealthBreakdown();
+        if (goal == null || snapshot == null) {
+            return breakdown;
+        }
+
+        GoalPeriod period = snapshot.period();
+        GoalPeriodExpectation expectation = snapshot.expectation();
+
+        breakdown.setGoalId(goal.getId());
+        breakdown.setGoalUuid(goal.getUuid());
+        breakdown.setPeriodUuid(period.getUuid());
+        breakdown.setPeriodStart(period.getPeriodStart());
+        breakdown.setPeriodEnd(period.getPeriodEnd());
+        breakdown.setEvaluationDate(expectation.getEvaluationDate());
+        breakdown.setMetric(goal.getMetric());
+        breakdown.setUnitLabel(unitLabel(goal));
+
+        breakdown.setConsistencyScore(snapshot.consistencyScore());
+        breakdown.setMomentumScore(snapshot.momentumScore());
+        breakdown.setProgressScore(snapshot.progressScore());
+        breakdown.setHealthScore(snapshot.healthScore());
+        breakdown.setHealthStatus(snapshot.healthStatus());
+
+        breakdown.setConsistencyWeight(effectiveConsistencyWeight(goal));
+        breakdown.setMomentumWeight(effectiveMomentumWeight(goal));
+        breakdown.setProgressWeight(effectiveProgressWeight(goal));
+
+        breakdown.setActionableDayCount(expectation.getActionableDayCount());
+        breakdown.setActionableDayCountToDate(expectation.getActionableDayCountToDate());
+        breakdown.setTotalExpectedMinimumUnits(expectation.getTotalExpectedMinimumUnits());
+        breakdown.setTotalExpectedTargetUnits(expectation.getTotalExpectedTargetUnits());
+        breakdown.setExpectedMinimumUnitsToDate(expectation.getExpectedMinimumUnitsToDate());
+        breakdown.setExpectedTargetUnitsToDate(expectation.getExpectedTargetUnitsToDate());
+        breakdown.setActualUnits(snapshot.currentValue());
+        breakdown.setActualUnitsToDate(snapshot.actualUnitsToDate());
+        breakdown.setMomentumBreakdown(toMomentumBreakdown(snapshot.momentumAnalysis()));
+        breakdown.setDailyDetails(buildDailyDetails(snapshot));
+        return breakdown;
+    }
+
+    private List<GoalDayHealthDetail> buildDailyDetails(PeriodSnapshot snapshot) {
+        if (snapshot == null || snapshot.expectation() == null || snapshot.expectation().getDailyExpectations() == null) {
+            return List.of();
+        }
+
+        LocalDate evaluationDate = snapshot.expectation().getEvaluationDate();
+        return snapshot.expectation().getDailyExpectations().stream()
+            .map(day -> buildDailyDetail(day, evaluationDate, snapshot.actualUnitsByDate()))
+            .collect(Collectors.toList());
+    }
+
+    private GoalDayHealthDetail buildDailyDetail(
+            GoalDayExpectation day,
+            LocalDate evaluationDate,
+            Map<LocalDate, Double> actualUnitsByDate) {
+        GoalDayHealthDetail detail = new GoalDayHealthDetail();
+        detail.setDate(day.getDate());
+        detail.setActionable(day.isActionable());
+        detail.setCountedInScore(evaluationDate != null && day.getDate() != null && !day.getDate().isAfter(evaluationDate));
+
+        double expectedMinimum = sanitize(day.getExpectedMinimumUnits());
+        double expectedTarget = sanitize(day.getExpectedTargetUnits());
+        double actual = sanitize(actualUnitsByDate != null ? actualUnitsByDate.get(day.getDate()) : null);
+        double consistencyFulfilled = Math.min(actual, expectedMinimum);
+        double progressFulfilled = Math.min(actual, expectedTarget);
+
+        detail.setExpectedMinimumUnits(round(expectedMinimum));
+        detail.setExpectedTargetUnits(round(expectedTarget));
+        detail.setActualUnits(round(actual));
+        detail.setConsistencyFulfilledUnits(round(consistencyFulfilled));
+        detail.setProgressFulfilledUnits(round(progressFulfilled));
+        detail.setConsistencyScore(expectedMinimum > 0.0 ? round((consistencyFulfilled / expectedMinimum) * 100.0) : null);
+        detail.setProgressScore(expectedTarget > 0.0 ? round((progressFulfilled / expectedTarget) * 100.0) : null);
+        return detail;
+    }
+
+    private MomentumBreakdown toMomentumBreakdown(MomentumAnalysis analysis) {
+        if (analysis == null) {
+            return null;
+        }
+
+        MomentumBreakdown breakdown = new MomentumBreakdown();
+        breakdown.setCurrentCompositeScore(analysis.currentCompositeScore());
+        breakdown.setBaselineCompositeScore(analysis.baselineCompositeScore());
+        breakdown.setPeriodsCompared(analysis.periodsCompared());
+        breakdown.setTrend(analysis.trend());
+        breakdown.setExplanation(analysis.explanation());
+        if (analysis.currentCompositeScore() != null && analysis.baselineCompositeScore() != null) {
+            breakdown.setDeltaFromBaseline(round(analysis.currentCompositeScore() - analysis.baselineCompositeScore()));
+        }
+        return breakdown;
+    }
+
+    private String unitLabel(Goal goal) {
+        if (goal == null || goal.getMetric() == null) {
+            return "units";
+        }
+        return goal.getMetric() == Goal.Metric.DURATION ? "minutes" : "activities";
     }
 
     private void updateStreak(Goal goal, List<PeriodSnapshot> snapshots) {
@@ -718,6 +848,15 @@ public class GoalHealthServiceV2 implements GoalHealthService {
 
     private record WeightedScore(Double score, int weight) {}
 
+    private record MomentumAnalysis(
+        Double score,
+        Double currentCompositeScore,
+        Double baselineCompositeScore,
+        int periodsCompared,
+        String trend,
+        String explanation
+    ) {}
+
     private record PeriodSnapshot(
         GoalPeriod period,
         GoalPeriodExpectation expectation,
@@ -728,6 +867,7 @@ public class GoalHealthServiceV2 implements GoalHealthService {
         Double progressScore,
         Double momentumScore,
         Double healthScore,
-        HealthStatus healthStatus
+        HealthStatus healthStatus,
+        MomentumAnalysis momentumAnalysis
     ) {}
 }
