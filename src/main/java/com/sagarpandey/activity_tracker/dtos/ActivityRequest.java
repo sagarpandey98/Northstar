@@ -52,6 +52,12 @@ public class ActivityRequest {
         // Optional — null means not linked to a goal
         private Long goalId;
 
+        // "No activity" / skip support. entryType null/"ACTIVITY" = normal log;
+        // "SKIP" = a not-done record carrying the reason taxonomy below (never counted).
+        private String entryType;
+        private String notDoneReasonCategory;
+        private String notDoneReasonSubcategory;
+
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
 
@@ -93,6 +99,15 @@ public class ActivityRequest {
 
         public Long getGoalId() { return goalId; }
         public void setGoalId(Long goalId) { this.goalId = goalId; }
+
+        public String getEntryType() { return entryType; }
+        public void setEntryType(String entryType) { this.entryType = entryType; }
+
+        public String getNotDoneReasonCategory() { return notDoneReasonCategory; }
+        public void setNotDoneReasonCategory(String notDoneReasonCategory) { this.notDoneReasonCategory = notDoneReasonCategory; }
+
+        public String getNotDoneReasonSubcategory() { return notDoneReasonSubcategory; }
+        public void setNotDoneReasonSubcategory(String notDoneReasonSubcategory) { this.notDoneReasonSubcategory = notDoneReasonSubcategory; }
     }
 
     public DataPayload getData() { return data; }

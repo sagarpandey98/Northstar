@@ -23,6 +23,7 @@ public interface ActivityRepository extends JpaRepository<Activity, Long>, JpaSp
           AND a.userId = :userId
           AND a.startTime < :periodEndExclusive
           AND COALESCE(a.endTime, a.startTime) >= :periodStartInclusive
+          AND (a.entryType IS NULL OR a.entryType <> com.sagarpandey.activity_tracker.enums.EntryType.SKIP)
     """)
     List<Activity> findGoalActivitiesOverlappingPeriod(
         @Param("goalId") Long goalId,

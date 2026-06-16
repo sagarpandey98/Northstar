@@ -93,8 +93,12 @@ public class SmartTodoServiceV1 implements SmartTodoService {
             LocalDate targetDate = requestedDate != null ? requestedDate : todayInUserZone;
 
             List<ActivityResponse> allActivities = safeActivityList(activityService.readAll(userId));
+            // "No activity" / skip records are never counted toward today's or period progress,
+            // streaks, or last-completed date. Excluding them at this single source point keeps
+            // every downstream sum/count helper (progress, duration, check-ins) skip-free.
             Map<Long, List<ActivityResponse>> activitiesByGoalId = allActivities.stream()
                 .filter(activity -> activity.getGoalId() != null)
+                .filter(activity -> !"SKIP".equalsIgnoreCase(activity.getEntryType()))
                 .collect(Collectors.groupingBy(ActivityResponse::getGoalId));
 
             List<String> goalUuids = allGoals.stream()

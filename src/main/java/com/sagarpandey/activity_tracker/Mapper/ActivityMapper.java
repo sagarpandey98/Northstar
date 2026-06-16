@@ -3,6 +3,7 @@ package com.sagarpandey.activity_tracker.Mapper;
 import com.sagarpandey.activity_tracker.dtos.ActivityRequest;
 import com.sagarpandey.activity_tracker.dtos.ActivityResponse;
 import com.sagarpandey.activity_tracker.enums.ActivitySource;
+import com.sagarpandey.activity_tracker.enums.EntryType;
 import com.sagarpandey.activity_tracker.models.Activity;
 import com.sagarpandey.activity_tracker.Exceptions.DurationCalculationException;
 import org.springframework.stereotype.Component;
@@ -43,8 +44,24 @@ public class ActivityMapper {
         }
 
         activity.setGoalId(data.getGoalId());
-        
+
+        // "No activity" / skip support — default to a normal counted ACTIVITY.
+        activity.setEntryType(parseEntryType(data.getEntryType()));
+        activity.setNotDoneReasonCategory(data.getNotDoneReasonCategory());
+        activity.setNotDoneReasonSubcategory(data.getNotDoneReasonSubcategory());
+
         return activity;
+    }
+
+    private EntryType parseEntryType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return EntryType.ACTIVITY;
+        }
+        try {
+            return EntryType.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            return EntryType.ACTIVITY;
+        }
     }
 
     // Convert Activity entity to ActivityResponse DTO
@@ -74,7 +91,14 @@ public class ActivityMapper {
         response.setSource(activity.getSource());
 
         response.setGoalId(activity.getGoalId());
-        
+
+        // Surface skip metadata so the frontend (and SmartTodo) can exclude/display skips.
+        response.setEntryType(activity.getEntryType() != null
+            ? activity.getEntryType().name()
+            : EntryType.ACTIVITY.name());
+        response.setNotDoneReasonCategory(activity.getNotDoneReasonCategory());
+        response.setNotDoneReasonSubcategory(activity.getNotDoneReasonSubcategory());
+
         return response;
     }
 

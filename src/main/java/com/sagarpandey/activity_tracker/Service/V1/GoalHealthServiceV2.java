@@ -363,7 +363,8 @@ public class GoalHealthServiceV2 implements GoalHealthService {
         OffsetDateTime periodEndExclusive = period.getPeriodEnd().plusDays(1).atStartOfDay(zoneId).toOffsetDateTime();
 
         for (Activity activity : goalActivities) {
-            if (activity == null || activity.getStartTime() == null) {
+            // Skip / "No activity" records are never counted toward health or progress.
+            if (activity == null || activity.isSkip() || activity.getStartTime() == null) {
                 continue;
             }
 

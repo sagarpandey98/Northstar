@@ -1,5 +1,6 @@
 package com.sagarpandey.activity_tracker.models;
 
+import com.sagarpandey.activity_tracker.enums.EntryType;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 
@@ -39,6 +40,23 @@ public class Activity extends BaseModel {
     // Source of activity creation
     @Column
     private String source; // e.g., "API_SINGLE", "API_BULK", "IMPORT", "MANUAL", etc.
+
+    // === "No activity" / skip support ===
+
+    // ACTIVITY (default) = a real completion that counts everywhere.
+    // SKIP = a "No activity" record that is never counted, only kept for analysis.
+    // Null is treated as ACTIVITY (legacy rows).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "entry_type")
+    private EntryType entryType = EntryType.ACTIVITY;
+
+    // Why the activity was not done (only meaningful for SKIP entries).
+    // Free-text "why" lives in the existing description field.
+    @Column(name = "not_done_reason_category")
+    private String notDoneReasonCategory;
+
+    @Column(name = "not_done_reason_subcategory")
+    private String notDoneReasonSubcategory;
 
     // === NEW FIELD - PHASE 3 ===
 
@@ -102,4 +120,18 @@ public class Activity extends BaseModel {
 
     public Long getGoalId() { return goalId; }
     public void setGoalId(Long goalId) { this.goalId = goalId; }
+
+    public EntryType getEntryType() { return entryType; }
+    public void setEntryType(EntryType entryType) { this.entryType = entryType; }
+
+    public String getNotDoneReasonCategory() { return notDoneReasonCategory; }
+    public void setNotDoneReasonCategory(String notDoneReasonCategory) { this.notDoneReasonCategory = notDoneReasonCategory; }
+
+    public String getNotDoneReasonSubcategory() { return notDoneReasonSubcategory; }
+    public void setNotDoneReasonSubcategory(String notDoneReasonSubcategory) { this.notDoneReasonSubcategory = notDoneReasonSubcategory; }
+
+    /** True when this is a "No activity" record that must never be counted. */
+    public boolean isSkip() {
+        return entryType == EntryType.SKIP;
+    }
 }

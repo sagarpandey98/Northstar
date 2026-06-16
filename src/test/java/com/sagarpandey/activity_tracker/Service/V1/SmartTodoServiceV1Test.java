@@ -284,6 +284,28 @@ class SmartTodoServiceV1Test {
         assertNull(flexTodo.getScheduledEndTime());
     }
 
+    @Test
+    void getSmartTodosForDate_skipLogIsNotCountedAsProgress() {
+        LocalDate targetDate = LocalDate.of(2026, 4, 26);
+
+        GoalResponse goal = goal(70L, "skip-goal", "Daily Push Up", Goal.Priority.HIGH, flexibleWeekly(4));
+        GoalPeriod period = period("skip-goal", targetDate.minusDays(6), targetDate);
+
+        // A "No activity" / skip record on the target date — must NOT count as progress,
+        // completion, or last-completed date.
+        ActivityResponse skip = activity(70L, "2026-04-26T09:00:00+05:30");
+        skip.setEntryType("SKIP");
+
+        SmartTodoServiceV1 service = service(List.of(goal), List.of(skip), List.of(period));
+        SmartTodoListResponse result = service.getSmartTodosForDate(USER_ID, targetDate);
+
+        assertEquals(1, result.getItems().size());
+        SmartTodoResponse todo = result.getItems().get(0);
+        assertEquals(0, todo.getCurrentProgress());
+        assertFalse(todo.isCompletedToday());
+        assertNull(todo.getLastCompletedDate());
+    }
+
     private SmartTodoServiceV1 service(
             List<GoalResponse> goals,
             List<ActivityResponse> activities,
